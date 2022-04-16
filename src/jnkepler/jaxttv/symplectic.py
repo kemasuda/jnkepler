@@ -59,30 +59,7 @@ def kepler_step(x, v, gm, dt, nitr=3):
 
     return x_new, v_new
 
-#%% interaction Hamiltonian
-""" this is wrong!!
-#@jit
-def Hint(x, v, masses):
-    ri = jnp.sqrt(jnp.sum(x * x, axis=1))
-    Hint = jnp.sum(1. / ri)
-
-    xast, vast = jacobi_to_astrocentric(x, v, masses)
-    ri0 = jnp.sqrt(jnp.sum(xast * xast, axis=1))
-    Hint -= jnp.sum(1. / ri0)
-
-    xjk = jnp.transpose(xast[:,None] - xast[None, :], axes=[0,2,1])
-    x2jk = jnp.sum(xjk * xjk, axis=1)#[:,None,:]
-    x2jk = jnp.where(x2jk!=0., x2jk, jnp.inf)
-    xjkinv = jnp.sqrt( 1. / x2jk )
-    Hint -= 0.5 * jnp.sum(jnp.dot(xjkinv, masses[1:]/masses[0]))
-
-    return Hint
-
-#Hintgrad = lambda x, v, masses: jit(grad(Hint))(x, v, masses)
-#Hintgrad = jit(grad(Hint))
-#Hintgrad = grad(Hint)
-"""
-
+""" something is wrong here
 #@jit
 def Hintgrad(x, v, masses):
     x2i = jnp.sum(x * x, axis=1)
@@ -108,9 +85,32 @@ def Hintgrad(x, v, masses):
     a += jnp.dot(mM, jnp.dot(Xjk, masses[1:]/masses[0]))
 
     return a
+"""
 
-#Hintgrad(x0, v0, masses)
-#get_Hintgrad(x0, v0, masses)
+#%% interaction Hamiltonian devided by Gm_0m_0
+def Hint(x, v, masses):
+    mu = masses[1:] / masses[0]
+
+    ri = jnp.sqrt(jnp.sum(x * x, axis=1))
+    Hint = jnp.sum(mu / ri)
+
+    xast, vast = jacobi_to_astrocentric(x, v, masses)
+    ri0 = jnp.sqrt(jnp.sum(xast * xast, axis=1))
+    Hint -= jnp.sum(mu / ri0)
+
+    xjk = jnp.transpose(xast[:,None] - xast[None, :], axes=[0,2,1])
+    x2jk = jnp.sum(xjk * xjk, axis=1)#[:,None,:]
+    x2jk = jnp.where(x2jk!=0., x2jk, jnp.inf)
+    xjkinv = jnp.sqrt( 1. / x2jk )
+    Hint -= 0.5 * jnp.sum(mu[:,None] * mu[None,:] * xjkinv)
+
+    return Hint
+
+gHint = grad(Hint)
+
+def Hintgrad(x, v, masses):
+    return gHint(x, v, masses) *  (masses[0] / masses[1:])[:,None]
+
 
 #%%
 #@jit

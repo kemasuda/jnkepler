@@ -58,11 +58,16 @@ def params_to_elements(params, npl):
 
 #%%
 class jaxttv:
-    def __init__(self, t_start, t_end, dt):
+    def __init__(self, t_start, t_end, dt, symplectic=True):
         self.t_start = t_start
         self.t_end = t_end
         self.dt = dt
         self.times = jnp.arange(t_start, t_end, dt)
+        self.symplectic = symplectic
+        if symplectic:
+            print ("# sympletic integrator is used.")
+        else:
+            print ("# hermite integrator is used.")
 
     def set_tcobs(self, tcobs, p_init, errorobs=None):
         self.tcobs = tcobs
@@ -117,6 +122,16 @@ class jaxttv:
 
     @partial(jit, static_argnums=(0,))
     def get_ttvs(self, elements, masses):
+        if self.symplectic:
+            return jttvfast(self, elements, masses)
+        else:
+            t, xva = integrate_elements(elements, masses, self.times, self.t_start)
+            de_frac = get_ediff(xva, masses)
+            return find_transit_times_planets(t, xva, self.tcobs, masses), de_frac
+
+    """
+    @partial(jit, static_argnums=(0,))
+    def get_ttvs(self, elements, masses):
         return jttvfast(self, elements, masses)
 
     @partial(jit, static_argnums=(0,))
@@ -124,6 +139,7 @@ class jaxttv:
         t, xva = integrate_elements(elements, masses, self.times, self.t_start)
         de_frac = get_ediff(xva, masses)
         return find_transit_times_planets(t, xva, self.tcobs, masses), de_frac
+    """
 
     def get_ttvs_nojit(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False):
         if t_start is not None:
