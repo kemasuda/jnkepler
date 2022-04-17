@@ -183,7 +183,7 @@ class jaxttv:
             if save is not None:
                 plt.savefig(save+"%d.png"%(j+1), dpi=200, bbox_inches="tight")
 
-    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, noscale=True):
+    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, noscale=True, pinit=None):
         from scipy.optimize import curve_fit
         import time
 
@@ -208,7 +208,8 @@ class jaxttv:
         lower_bounds = params_lower / scales
         upper_bounds = params_upper / scales
         bounds = (lower_bounds, upper_bounds)
-        pinit = 0.5 * (lower_bounds + upper_bounds)
+        if pinit is None:
+            pinit = 0.5 * (lower_bounds + upper_bounds)
 
         def getmodel(params):
             params *= scales

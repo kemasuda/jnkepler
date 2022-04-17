@@ -99,18 +99,39 @@ def Hint(x, v, masses):
     Hint -= jnp.sum(mu / ri0)
 
     xjk = jnp.transpose(xast[:,None] - xast[None, :], axes=[0,2,1])
+
+    """ autograd fails for m
     x2jk = jnp.sum(xjk * xjk, axis=1)#[:,None,:]
     x2jk = jnp.where(x2jk!=0., x2jk, jnp.inf)
     xjkinv = jnp.sqrt( 1. / x2jk )
     Hint -= 0.5 * jnp.sum(mu[:,None] * mu[None,:] * xjkinv)
+    """
+
+    #"""
+    x2jk = jnp.sum(xjk * xjk, axis=1)
+    nzidx = x2jk != 0.
+    x2jk = jnp.where(nzidx, x2jk, 1.)
+    xjkinv = jnp.where(nzidx, jnp.sqrt( 1. / x2jk ), 0.)
+    Hint -= 0.5 * jnp.sum(mu[:,None] * mu[None,:] * xjkinv)
+    #"""
 
     return Hint
 
 gHint = grad(Hint)
 
 def Hintgrad(x, v, masses):
-    return gHint(x, v, masses) *  (masses[0] / masses[1:])[:,None]
+    return gHint(x, v, masses) * (masses[0] / masses[1:])[:,None]
 
+
+#%%
+"""
+from utils_dev import jacobi_to_astrocentric
+func = lambda x0: jnp.sum(Hintgrad(x0, v0, masses))
+#func = lambda masses: jnp.sum(grad(Hint)(x0, v0, masses))
+func(x0)
+gfunc = grad(func)
+gfunc(x0)
+"""
 
 #%%
 #@jit
@@ -281,7 +302,7 @@ def get_ttvs(self, elements, masses):
 from jax import make_jaxpr
 import numpy as np
 import matplotlib.pyplot as plt
-from jaxttv import jaxttv
+from jnkepler.jaxttv import jaxttv
 
 #%%
 elements = jnp.array([[365.25, 0.4*jnp.cos(0.1*jnp.pi), 0.4*jnp.sin(0.1*jnp.pi), 0, 0.1*jnp.pi, 40], [365.25*2., 0., 0, 0, 0.1*jnp.pi, 40]])
@@ -310,6 +331,7 @@ p_init = [jnp.mean(jnp.diff(tcobs[j])) for j in range(len(tcobs))]
 jttv.set_tcobs(tcobs, p_init)
 
 #%%
+from utils_dev import initialize_from_elements
 x0, v0 = initialize_from_elements(elements, masses, t_start)
 
 #%%
