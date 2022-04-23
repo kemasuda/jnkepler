@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from functools import partial
-from .utils import get_ediff, get_energy_vmap
+from .utils import get_ediff, get_energy_vmap, initialize_from_elements, xv_to_elements, BIG_G
 from .hermite4 import integrate_elements, find_transit_times_planets, find_transit_times_nodata
 from .symplectic import get_ttvs as jttvfast#, test
 from jax import jit, grad
@@ -319,6 +319,25 @@ class jaxttv:
             self.quicklook(getmodel(sol.params), save=save)
 
         return sol.params
+
+    def get_elements(self, params, time, wh=False, dt=None):
+        elements, masses = params_to_elements(params, self.nplanet)
+        if dt is None:
+            dt = self.dt
+        if time < self.t_start + self.dt:
+            tprint = self.t_start
+            xjac, vjac = initialize_from_elements(elements, masses, self.t_start)
+        else:
+            t, xva, _ = self.integrate(elements, masses, self.t_start, time, dt)
+            tprint = t[-1]
+            x, v, a = xva[-1]
+            xjac, vjac = (x[:,:] - x[0,:])[1:], (v[:,:] - v[0,:])[1:]
+        if wh: # for H_Kepler defined in WH splitting
+            ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
+        else:
+            ki = BIG_G * jnp.cumsum(masses)[1:]
+        print ("# elements at time %f (time specified: %f)"%(tprint,time))
+        return xv_to_elements(xjac, vjac, ki)
 
 #%%
 """

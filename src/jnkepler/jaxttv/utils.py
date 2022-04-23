@@ -25,6 +25,13 @@ def tic_to_u(tic, period, ecc, omega, t_epoch):
     return u_epoch
 
 @jit
+def tic_to_m(tic, period, ecc, omega, t_epoch):
+    tanw2 = jnp.tan(0.5 * omega)
+    uic = 2 * jnp.arctan( jnp.sqrt((1.-ecc)/(1.+ecc)) * (1.-tanw2)/(1.+tanw2) ) # u at t=tic
+    M_epoch = 2 * jnp.pi / period * (t_epoch - tic) + uic - ecc * jnp.sin(uic) # M at t=0
+    return M_epoch
+
+@jit
 def elements_to_xvrel(porb, ecc, inc, omega, lnode, u, mass):
     cosu, sinu = jnp.cos(u), jnp.sin(u)
     cosw, sinw, cosO, sinO, cosi, sini = jnp.cos(omega), jnp.sin(omega), jnp.cos(lnode), jnp.sin(lnode), jnp.cos(inc), jnp.sin(inc)
@@ -42,6 +49,38 @@ def elements_to_xvrel(porb, ecc, inc, omega, lnode, u, mass):
     vrel = (na / R) * (Pvec * vx + Qvec * vy)
 
     return xrel, vrel
+
+# convert x/v to elements 
+@jit
+def xv_to_elements(x, v, ki):
+    r0 = jnp.sqrt(jnp.sum(x*x, axis=1))
+    v0s = jnp.sum(v*v, axis=1)
+    u = jnp.sum(x*v, axis=1)
+    a = 1. / (2./r0 - v0s/ki)
+    n = jnp.sqrt(ki / (a*a*a))
+    ecosE0, esinE0 = 1. - r0 / a, u / (n*a*a)
+    e = jnp.sqrt(ecosE0**2 + esinE0**2)
+    E = jnp.arctan2(esinE0, ecosE0)
+    #M = E - esinE0
+
+    hx = x[:,1] * v[:,2] - x[:,2] * v[:,1]
+    hy = x[:,2] * v[:,0] - x[:,0] * v[:,2]
+    hz = x[:,0] * v[:,1] - x[:,1] * v[:,0]
+    hnorm = jnp.sqrt(hx**2 + hy**2 + hz**2)
+    inc = jnp.arccos(hz / hnorm)
+
+    P = (jnp.cos(E) / r0)[:,None] * x - (jnp.sqrt(a / ki) * jnp.sin(E))[:,None] * v
+    Q = (jnp.sin(E) / r0 / jnp.sqrt(1 - e*e))[:,None] * x + (jnp.sqrt(a / ki) * (jnp.cos(E)-e) / jnp.sqrt(1 - e*e))[:,None] * v
+    PQz = jnp.sqrt(P[:,2]**2 + Q[:,2]**2)
+    omega = jnp.where(PQz!=0., jnp.arctan2(P[:,2], Q[:,2]), 0.)
+    coslnode = (P[:,0] * Q[:,2] - P[:,2] * Q[:,0]) / PQz
+    sinlnode = (P[:,1] * Q[:,2] - P[:,2] * Q[:,1]) / PQz
+    lnode = jnp.where(PQz!=0., jnp.arctan2(sinlnode, coslnode), 0.)
+
+    pdic = {'period': 2 * jnp.pi / n, 'ecc': e, 'cosi': jnp.cos(inc), 'omega': omega, 'lnode': lnode,
+            'cosw': jnp.cos(omega), 'sinw': jnp.sin(omega),
+            'ea': E, 'ma': E - esinE0, 'a': a}
+    return pdic
 
 @jit
 def initialize_from_elements(elements, masses, t_epoch):
