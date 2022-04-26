@@ -104,7 +104,7 @@ def get_gderivs(xastj, vastj, aastj):
 #xkey, vkey, akey = 0, 1, 2
 #def find_transit_times_nodata(t, xva, j, masses, nitr=3):
     #x, v, a = xva[:,xkey,:,:], xva[:,vkey,:,:], xva[:,akey,:,:]
-def find_transit_times_nodata(t, x, v, a, j, masses, nitr=3):
+def find_transit_times_nodata(t, x, v, a, j, masses, nitr=5):
     xastj, vastj, aastj = cm_to_astrocentric(x, v, a, j)
     gj, dotgj = get_gderivs(xastj, vastj, aastj)
 

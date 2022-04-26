@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from functools import partial
 from .utils import get_ediff, get_energy_vmap, initialize_from_elements, xv_to_elements, BIG_G
-from .hermite4 import integrate_elements, find_transit_times_planets, find_transit_times_nodata
+from .hermite4 import integrate_elements, find_transit_times_planets, find_transit_times_nodata, findidx_map
 from .symplectic import get_ttvs as jttvfast#, test
 from jax import jit, grad
 #import jax, jaxlib, numpyro
@@ -141,7 +141,7 @@ class jaxttv:
         return find_transit_times_planets(t, xva, self.tcobs, masses), de_frac
     """
 
-    def get_ttvs_nojit(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False):
+    def get_ttvs_nojit(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False, nitr=5):
         if t_start is not None:
             times, t0 = jnp.arange(t_start, t_end, dt), t_start
         else:
@@ -151,7 +151,7 @@ class jaxttv:
 
         tcarr = []
         for pidx in range(1, len(masses)):
-            tc = find_transit_times_nodata(t, xva[:,0,:,:], xva[:,1,:,:], xva[:,2,:,:], pidx, masses)
+            tc = find_transit_times_nodata(t, xva[:,0,:,:], xva[:,1,:,:], xva[:,2,:,:], pidx, masses, nitr=nitr)
             #tc = find_transit_times_nodata(t, xva, pidx, masses)
             tcarr.append(tc)
         if flatten:
@@ -182,6 +182,60 @@ class jaxttv:
             plt.legend(loc='best')
             if save is not None:
                 plt.savefig(save+"%d.png"%(j+1), dpi=200, bbox_inches="tight")
+
+    def check_residuals(self, tc, jitters=None):
+        if jitters is not None:
+            jitters = np.atleast_1d(jitters)
+            if len(jitters) == 1:
+                jitters = np.array([jitters[0]] * self.nplanet)
+            else:
+                assert len(jitters) == self.nplanet
+        else:
+            jitters = np.zeros(self.nplanet)
+
+        for j in range(self.nplanet):
+            fig, ax = plt.subplots(1,2,figsize=(16,4))
+            idx = self.pidx==j+1
+            res = self.tcobs_flatten[idx]-tc[idx]
+            err0 = self.errorobs_flatten[idx]
+            err = np.sqrt(err0**2 + jitters[j]**2)
+            #print ("planet", j+1, "res std: %.2e\t"%np.std(res), "res/raw err std: %.2f\t"%np.std(res/err0),
+            #       "res/estimated err std: %.2f"%np.std(res/err))
+            ax[0].errorbar(self.tcobs_flatten[idx], res*1440, yerr=self.errorobs_flatten[idx]*1440, fmt='o', lw=1,
+                          label='SD=%.2e'%np.std(res))
+            ax[0].set_title("planet %d"%(j+1))
+            ax[0].set_xlabel("time (days)")
+            ax[0].set_ylabel('residual (min)')
+            ax[0].legend(loc='best')
+
+            sd = np.std(np.array(res/err))
+            rnds = np.random.randn(int(1e6))
+            ax[1].hist(np.array(res/err), histtype='step', lw=1, density=True, color='C0')
+            ax[1].hist(rnds*sd, histtype='step', lw=1, density=True, color='C0', ls='dashed',
+                    label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]), bins=100)
+            #ax[1].hist(rnds, histtype='step', lw=1, density=True, color='gray', ls='solid',
+            #        label='$\sigma=1$', bins=100)
+            ax[1].set_title("planet %d"%(j+1))
+            ax[1].set_xlabel("residual / error")
+            ax[1].set_ylim(1e-4, 2)
+            ax[1].set_ylabel('frequency (normalized)')
+            ax[1].set_yscale("log")
+            ax[1].legend(loc='lower right')
+
+    def check_prec(self, params, dtfrac=1e-3, nitr=10):
+        tc, de = self.get_ttvs(*params_to_elements(params, self.nplanet))
+        print ("# fractional energy error (symplectic, dt=%.2e): %.2e" % (self.dt,de))
+
+        elements, masses = params_to_elements(params, self.nplanet)
+        dtcheck = self.p_init[0] * dtfrac
+        tc2, de2 = self.get_ttvs_nojit(elements, masses, t_start=self.t_start, t_end=self.t_end, dt=dtcheck,
+                                       flatten=True, nitr=nitr)
+        tc2 = tc2[findidx_map(tc2, tc)]
+        print ("# fractional energy error (Hermite, dt=%.2e): %.2e" % (dtcheck, de2))
+        maxdiff = np.max(np.abs(tc-tc2))
+        print ("# max difference in tc: %.2e days (%.2f sec)"%(maxdiff, maxdiff*86400))
+
+        return tc
 
     def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, noscale=True, pinit=None):
         from scipy.optimize import curve_fit
