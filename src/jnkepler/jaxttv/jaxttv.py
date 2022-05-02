@@ -217,7 +217,8 @@ class jaxttv:
             #        label='$\sigma=1$', bins=100)
             ax[1].set_title("planet %d"%(j+1))
             ax[1].set_xlabel("residual / error")
-            ax[1].set_ylim(1e-4, 2)
+            ymin, ymax = ax[1].get_ylim()
+            ax[1].set_ylim(1e-4, ymax*1.5)
             ax[1].set_ylabel('frequency (normalized)')
             ax[1].set_yscale("log")
             ax[1].legend(loc='lower right')
@@ -230,7 +231,7 @@ class jaxttv:
         dtcheck = self.p_init[0] * dtfrac
         tc2, de2 = self.get_ttvs_nojit(elements, masses, t_start=self.t_start, t_end=self.t_end, dt=dtcheck,
                                        flatten=True, nitr=nitr)
-        tc2 = tc2[findidx_map(tc2, tc)]
+        tc2 = tc2[np.array(findidx_map(tc2, tc))]
         print ("# fractional energy error (Hermite, dt=%.2e): %.2e" % (dtcheck, de2))
         maxdiff = np.max(np.abs(tc-tc2))
         print ("# max difference in tc: %.2e days (%.2f sec)"%(maxdiff, maxdiff*86400))
