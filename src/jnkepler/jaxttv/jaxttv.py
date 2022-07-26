@@ -1,4 +1,4 @@
-__all__ = ["jaxttv", "elements_to_pdic", "params_to_elements"]
+__all__ = ["JaxTTV", "elements_to_pdic", "params_to_elements"]
 
 #%%
 import numpy as np
@@ -7,12 +7,8 @@ import jax.numpy as jnp
 from functools import partial
 from .utils import get_ediff, get_energy_vmap, initialize_from_elements, xv_to_elements, BIG_G
 from .hermite4 import integrate_elements, find_transit_times_planets, find_transit_times_nodata, findidx_map
-from .symplectic import get_ttvs as jttvfast#, test
+from .symplectic import get_ttvs as jttvfast
 from jax import jit, grad
-#import jax, jaxlib, numpyro
-#jax.__version__
-#jaxlib.__version__
-#numpyro.__version__
 
 #%%
 from jax.config import config
@@ -57,7 +53,7 @@ def params_to_elements(params, npl):
     return elements, masses
 
 #%%
-class jaxttv:
+class JaxTTV:
     def __init__(self, t_start, t_end, dt, symplectic=True):
         self.t_start = t_start
         self.t_end = t_end
@@ -210,17 +206,19 @@ class jaxttv:
 
             sd = np.std(np.array(res/err))
             rnds = np.random.randn(int(1e6))
+            ax[1].set_yscale("log")
             ax[1].hist(np.array(res/err), histtype='step', lw=1, density=True, color='C0')
-            ax[1].hist(rnds*sd, histtype='step', lw=1, density=True, color='C0', ls='dashed',
-                    label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]), bins=100)
-            #ax[1].hist(rnds, histtype='step', lw=1, density=True, color='gray', ls='solid',
-            #        label='$\sigma=1$', bins=100)
+            ymin, ymax = ax[1].get_ylim()
+            ax[1].set_ylim(1e-3, ymax*1.5)
+            #ax[1].hist(rnds*sd, histtype='step', lw=1, density=True, color='C0', ls='dashed',
+            #        label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]), bins=100)
             ax[1].set_title("planet %d"%(j+1))
             ax[1].set_xlabel("residual / error")
-            ymin, ymax = ax[1].get_ylim()
-            ax[1].set_ylim(1e-4, ymax*1.5)
+            #ymin, ymax = ax[1].get_ylim()
+            #ax[1].set_ylim(1e-4, ymax*1.5)
             ax[1].set_ylabel('frequency (normalized)')
-            ax[1].set_yscale("log")
+            x0 = np.linspace(-5, 5, 100)
+            ax[1].plot(x0, np.exp(-0.5*x0**2/sd**2)/np.sqrt(2*np.pi)/sd, lw=1, color='C0', ls='dashed', label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]))
             ax[1].legend(loc='lower right')
 
     def check_prec(self, params, dtfrac=1e-3, nitr=10):
@@ -238,41 +236,42 @@ class jaxttv:
 
         return tc
 
-    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, noscale=True, pinit=None):
+    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6],
+          amoeba=False, plot=True, save=None, pinit=None, jacrev=False):
         from scipy.optimize import curve_fit
         import time
 
         npl = self.nplanet
 
-        params_lower, params_upper = [], []
-        pnames, scales = [], []
+        params_lower, params_upper, pnames = [], [], []
         for j in range(npl): # need to be changed to take into account non-transiting planets
             params_lower += [self.p_init[j]-dp, -emax, -emax, cosilim[0], olim[0], self.tcobs[j][0]-dtic]
             params_upper += [self.p_init[j]+dp, emax+1e-2, emax+1e-2, cosilim[1], olim[1], self.tcobs[j][0]+dtic]
             pnames += ["p%d"%(j+1), "ec%d"%(j+1), "es%d"%(j+1), "cosi%d"%(j+1), "om%d"%(j+1), "tic%d"%(j+1)]
-            scales += [self.p_init[j], 1, 1, 1, jnp.pi, self.tcobs[j][0]]
         params_lower += [jnp.log(mmin)] * npl
         params_upper += [jnp.log(mmax)] * npl
         pnames += ["m%d"%(j+1) for j in range(npl)]
-        scales = jnp.array((scales) + [10.]*npl).ravel()
         params_lower = jnp.array(params_lower).ravel()
         params_upper = jnp.array(params_upper).ravel()
-        if noscale:
-            scales = 1.
 
-        lower_bounds = params_lower / scales
-        upper_bounds = params_upper / scales
-        bounds = (lower_bounds, upper_bounds)
+        bounds = (params_lower, params_upper)
         if pinit is None:
-            pinit = 0.5 * (lower_bounds + upper_bounds)
+            pinit = 0.5 * (params_lower + params_upper)
 
         def getmodel(params):
-            params *= scales
             elements, masses = params_to_elements(params, npl)
             model = self.get_ttvs(elements, masses)[0]
             return model
 
-        #objective = lambda params: jnp.sum(myfunct(params)[1]**2)
+        if jacrev and (not amoeba):
+            from jax import jit, jacrev
+            _jacfunc = jit(jacrev(getmodel)) # it takes long to compile...
+            def jacfunc(x, *params):
+                return _jacfunc(jnp.array(params))
+            jac = jacfunc
+        else:
+            jac = None
+
         objective = lambda params: jnp.sum(((self.tcobs_flatten - getmodel(params)) / self.errorobs_flatten)**2)
         print ("initial objective function: %.2f (%d data)"%(objective(pinit), len(self.tcobs_flatten)))
 
@@ -287,8 +286,8 @@ class jaxttv:
 
         func = lambda x, *params: getmodel(np.array(params))
         print ()
-        print ("running LM optimization...")
-        popt, pcov = curve_fit(func, None, self.tcobs_flatten, p0=pinit, sigma=self.errorobs_flatten, bounds=bounds)
+        print ("running optimization...")
+        popt, pcov = curve_fit(func, None, self.tcobs_flatten, p0=pinit, sigma=self.errorobs_flatten, bounds=bounds, jac=jac)
         print ("objective function: %.2f (%d data)"%(objective(popt), len(self.tcobs_flatten)))
         print ("# elapsed time (least square): %.1f sec" % (time.time()-start_time))
         pfinal = popt
