@@ -79,14 +79,18 @@ class JaxTTV:
         pidx, tcobs_linear, ttvamp = np.array([]), np.array([]), np.array([])
         for j in range(len(tcobs)):
             tc = tcobs[j]
-            if not len(tc):
+            if len(tc)==0:
                 continue
-
-            pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
-            m = np.round((tc - tc[0]) / p_init[j])
-            pfit, t0fit = np.polyfit(m, tc, deg=1)
-            tc_linear = t0fit + m*pfit
-            tcobs_linear = np.r_[tcobs_linear, tc_linear]
+            elif len(tc)==1:
+                pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
+                tc_linear = tc[0]
+                tcobs_linear = np.r_[tcobs_linear, tc_linear]
+            else:
+                pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
+                m = np.round((tc - tc[0]) / p_init[j])
+                pfit, t0fit = np.polyfit(m, tc, deg=1)
+                tc_linear = t0fit + m*pfit
+                tcobs_linear = np.r_[tcobs_linear, tc_linear]
 
             ttv = tc - tc_linear
             ttvamp = np.r_[ttvamp, np.max(ttv)-np.min(ttv)]
