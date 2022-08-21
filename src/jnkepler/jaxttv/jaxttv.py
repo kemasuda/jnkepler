@@ -129,18 +129,6 @@ class JaxTTV:
             de_frac = get_ediff(xva, masses)
             return find_transit_times_planets(t, xva, self.tcobs, masses), de_frac
 
-    """
-    @partial(jit, static_argnums=(0,))
-    def get_ttvs(self, elements, masses):
-        return jttvfast(self, elements, masses)
-
-    @partial(jit, static_argnums=(0,))
-    def get_ttvs_hermite4(self, elements, masses):
-        t, xva = integrate_elements(elements, masses, self.times, self.t_start)
-        de_frac = get_ediff(xva, masses)
-        return find_transit_times_planets(t, xva, self.tcobs, masses), de_frac
-    """
-
     def get_ttvs_nojit(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False, nitr=5):
         if t_start is not None:
             times, t0 = jnp.arange(t_start, t_end, dt), t_start
@@ -199,8 +187,6 @@ class JaxTTV:
             res = self.tcobs_flatten[idx]-tc[idx]
             err0 = self.errorobs_flatten[idx]
             err = np.sqrt(err0**2 + jitters[j]**2)
-            #print ("planet", j+1, "res std: %.2e\t"%np.std(res), "res/raw err std: %.2f\t"%np.std(res/err0),
-            #       "res/estimated err std: %.2f"%np.std(res/err))
             ax[0].errorbar(self.tcobs_flatten[idx], res*1440, yerr=self.errorobs_flatten[idx]*1440, fmt='o', lw=1,
                           label='SD=%.2e'%np.std(res))
             ax[0].set_title("planet %d"%(j+1))
@@ -214,8 +200,6 @@ class JaxTTV:
             ax[1].hist(np.array(res/err), histtype='step', lw=1, density=True, color='C0')
             ymin, ymax = ax[1].get_ylim()
             ax[1].set_ylim(1e-3, ymax*1.5)
-            #ax[1].hist(rnds*sd, histtype='step', lw=1, density=True, color='C0', ls='dashed',
-            #        label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]), bins=100)
             ax[1].set_title("planet %d"%(j+1))
             ax[1].set_xlabel("residual / error")
             #ymin, ymax = ax[1].get_ylim()
@@ -301,183 +285,13 @@ class JaxTTV:
 
         return pfinal
 
-    def optimal_params(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[0,0], olim=[0,0], amoeba=False, plot=True, save=None, noscale=True):
-        import jaxopt
-        from pympfit import lmfit
-
-        npl = self.nplanet
-
-        params_lower, params_upper = [], []
-        pnames, scales = [], []
-        for j in range(npl): # need to be changed to take into account non-transiting planets
-            params_lower += [self.p_init[j]-dp, -emax, -emax, cosilim[0], olim[0], self.tcobs[j][0]-dtic]
-            params_upper += [self.p_init[j]+dp, emax+1e-2, emax+1e-2, cosilim[1], olim[1], self.tcobs[j][0]+dtic]
-            pnames += ["p%d"%(j+1), "ec%d"%(j+1), "es%d"%(j+1), "cosi%d"%(j+1), "om%d"%(j+1), "tic%d"%(j+1)]
-            scales += [self.p_init[j], 1, 1, 1, jnp.pi, self.tcobs[j][0]]
-        params_lower += [jnp.log(mmin)] * npl
-        params_upper += [jnp.log(mmax)] * npl
-        pnames += ["m%d"%(j+1) for j in range(npl)]
-        scales = jnp.array((scales) + [10.]*npl).ravel()
-        params_lower = jnp.array(params_lower).ravel()
-        params_upper = jnp.array(params_upper).ravel()
-        if noscale:
-            scales = 1.
-
-        lower_bounds = params_lower / scales
-        upper_bounds = params_upper / scales
-        bounds = (lower_bounds, upper_bounds)
-        pinit = 0.5 * (lower_bounds + upper_bounds)
-
-        def getmodel(params):
-            params *= scales
-            elements, masses = params_to_elements(params, npl)
-            model = self.get_ttvs(elements, masses)[0]
-            return model
-
-        def myfunct(params, fjac=None, parname=None):
-            model = np.array(getmodel(params))
-            res = (self.tcobs_flatten - model) / self.errorobs_flatten
-            status = 0
-            return [status, res]
-
-        #objective = lambda params: jnp.sum(myfunct(params)[1]**2)
-        objective = lambda params: jnp.sum(((self.tcobs_flatten - getmodel(params)) / self.errorobs_flatten)**2)
-        print ("initial objective function: %.2f (%d data)"%(objective(pinit), len(self.tcobs_flatten)))
-
-        if amoeba:
-            from scipy.optimize import minimize
-            print ()
-            print ("running Nelder-Mead optimization...")
-            res = minimize(objective, pinit, bounds=np.array(bounds).T, method='Nelder-Mead', options={'adaptive': False})
-            print ("objective function: %.2f (%d data)"%(objective(res.x), len(self.tcobs_flatten)))
-            pinit = res.x
-
-        try:
-            print ()
-            print ("running LM optimization...")
-            sol = lmfit(myfunct, bounds, pnames, initial=pinit, out=None)
-            print ("objective function: %.2f (%d data)"%(objective(sol.params), len(self.tcobs_flatten)))
-            pfinal = sol.params
-
-        except:
-            print ("mpfit failed.")
-            print ()
-            print ("running L-BFGS-B optimization...")
-            solver = jaxopt.ScipyBoundedMinimize(fun=objective, method="l-bfgs-b")
-            sol = solver.run(pinit, bounds=bounds)
-            #"""
-            """
-            from scipy.optimize import minimize
-            res = minimize(objective, pinit, bounds=np.array(bounds).T, method='L-BFGS-B')
-            print ("objective function: %.2f (%d data)"%(objective(res.x), len(self.tcobs_flatten)))
-            pfinal = res.x
-            """
-
-        if plot:
-            self.quicklook(getmodel(sol.params), save=save)
-
-        return sol.params
-
-    def get_elements(self, params, time, wh=False, dt=None):
+    def get_elements(self, params, WHsplit=False):
         elements, masses = params_to_elements(params, self.nplanet)
-        if dt is None:
-            dt = self.dt
-        if time < self.t_start + self.dt:
-            tprint = self.t_start
-            xjac, vjac = initialize_from_elements(elements, masses, self.t_start)
-        else:
-            t, xva, _ = self.integrate(elements, masses, self.t_start, time, dt)
-            tprint = t[-1]
-            x, v, a = xva[-1]
-            xjac, vjac = (x[:,:] - x[0,:])[1:], (v[:,:] - v[0,:])[1:]
-        if wh: # for H_Kepler defined in WH splitting
+        xjac, vjac = initialize_from_elements(elements, masses, self.t_start)
+
+        if WHsplit: # for H_Kepler defined in WH splitting (i.e. TTVFast)
             ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
-        else:
+        else: # total interior mass
             ki = BIG_G * jnp.cumsum(masses)[1:]
-        print ("# elements at time %f (time specified: %f)"%(tprint,time))
+
         return xv_to_elements(xjac, vjac, ki)
-
-#%%
-"""
-elements = jnp.array([[365.25, 0.4*jnp.cos(0.1*jnp.pi), 0.4*jnp.sin(0.1*jnp.pi), 0, 0.1*jnp.pi, 40], [365.25*2., 0., 0, 0, 0.1*jnp.pi, 40]])
-masses = jnp.array([1, 300e-6, 300e-6])
-
-#%%
-elements = jnp.array([[10, 0.1*jnp.cos(0.1*jnp.pi), 0.1*jnp.sin(0.1*jnp.pi), 0, 0, 2], [20.2, 0.2*jnp.cos(0.1*jnp.pi), 0.2*jnp.sin(0.1*jnp.pi), 0, 0, 3]])
-masses = jnp.array([1, 30e-6, 30e-6])
-
-#%%
-elements = jnp.array([[10, 0.1*jnp.cos(0.1*jnp.pi), 0.1*jnp.sin(0.1*jnp.pi), 0, 0, 2], [20.2, 0.2*jnp.cos(0.1*jnp.pi), 0.2*jnp.sin(0.1*jnp.pi), 0, 0, 3], [30, 0.1*jnp.cos(-0.5*jnp.pi), 0.1*jnp.sin(-0.5*jnp.pi), 0, 0, 4]])
-masses = jnp.array([1, 10e-6, 10e-6, 10e-6])
-
-#%%
-dt = 0.2 * 2
-t_start, t_end = 0, 4 * 365.25
-jttv = jaxttv(t_start, t_end, dt)
-
-#%%
-#t, xva, etot = jttv.integrate(elements, masses, t_start, t_end, dt)
-#plt.plot(t, etot/etot[0]-1., '-')
-
-#%%
-tcobs, _ = jttv.get_ttvs_nojit(elements, masses, t_start, t_end, 0.001)
-
-#%%
-p_init = [elements[j][0] for j in range(len(masses)-1)]
-jttv.set_tcobs(tcobs, p_init)
-
-#%%
-%timeit tpars, de = jttv.get_ttvs(elements, masses)
-tpars, de = jttv.get_ttvs(elements, masses)
-print ("fractional energy change:", de)
-
-#%%
-jttv.quicklook(tpars)#, save='test')
-
-#%%
-dtc = tpars - jnp.hstack(jttv.tcobs)
-plt.xlabel("transit time difference (sec)")
-plt.hist(np.array(dtc)*86400)
-
-#%%
-# 6331, 21699 for macbookpro, no change with nitr
-# 4949, 8352 w/o tc iteration
-# 6320, 21674 without final for
-#, 15659 w/o final for
-# 5800, 17950 for dE iteration
-# 6026, 18418 for symp2
-# 4966, 12749 for symp2 w/o jit
-# imac: 3967, 9673 for dE iteration
-# 2975, 7098 for dE, w/o mapTO
-# 2776, 6576 for dE, w/o mapTO, w/o jit
-# updated imac: 3764, 9403 for dE, w/o mapTO, w/o jit
-# updated imac: 3976, 10121 for symp2
-# 4249, 10167 for symp2, w/ mapTO
-# 3964, 9507 for symp2, w/ mapTO, w/o jit
-# 3102, 7224 for symp2, w/o mapTO, w/o jit
-f = lambda elements, masses: jnp.sum(jttv.get_ttvs(elements, masses)[0])
-#f = lambda elements, masses: jnp.sum(test(jttv, elements, masses)[0])
-gf = jit(grad(f))
-#%timeit ttvf(elements, masses)
-#gttvf(elements, masses)
-#%timeit gttvf(elements, masses)
-
-#%%
-f(elements, masses)
-gf(elements, masses)
-
-#%%
-# 3935, 10363 for macbookpro
-# 3397, 9620 with inaccurate tc
-# imac: 2500, 5820
-#jttv.quicklook(jttv.get_ttvs_hermite4(elements, masses)[0])
-f = lambda elements, masses: jnp.sum(jttv.get_ttvs_hermite4(elements, masses)[0])
-gf = jit(grad(f))
-f(elements, masses)
-gf(elements, masses)
-
-#%%
-from jax import make_jaxpr
-make_jaxpr(f)(elements, masses)
-make_jaxpr(gf)(elements, masses)
-"""

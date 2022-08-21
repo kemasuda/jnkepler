@@ -33,6 +33,12 @@ def tic_to_m(tic, period, ecc, omega, t_epoch):
 
 @jit
 def elements_to_xvrel(porb, ecc, inc, omega, lnode, u, mass):
+    """ convert elemetns to position/velocity
+
+        Args:
+            mass -> should be ki?
+
+    """
     cosu, sinu = jnp.cos(u), jnp.sin(u)
     cosw, sinw, cosO, sinO, cosi, sini = jnp.cos(omega), jnp.sin(omega), jnp.cos(lnode), jnp.sin(lnode), jnp.cos(inc), jnp.sin(inc)
 
@@ -50,9 +56,17 @@ def elements_to_xvrel(porb, ecc, inc, omega, lnode, u, mass):
 
     return xrel, vrel
 
-# convert x/v to elements 
-@jit
 def xv_to_elements(x, v, ki):
+    """ convert position/velocity to elements
+
+        Args:
+            x, v: position and velocity (Norbit, Nxyz)
+            ki: 'GM' in Kepler's 3rd law (Norbit); depends on what x/v mean (Jacobi, astrocentric, ...)
+
+        Returns:
+            sma, mean motion, ecc, inclination, \omega, \Omega, mean anomaly
+
+    """
     r0 = jnp.sqrt(jnp.sum(x*x, axis=1))
     v0s = jnp.sum(v*v, axis=1)
     u = jnp.sum(x*v, axis=1)
@@ -61,7 +75,6 @@ def xv_to_elements(x, v, ki):
     ecosE0, esinE0 = 1. - r0 / a, u / (n*a*a)
     e = jnp.sqrt(ecosE0**2 + esinE0**2)
     E = jnp.arctan2(esinE0, ecosE0)
-    #M = E - esinE0
 
     hx = x[:,1] * v[:,2] - x[:,2] * v[:,1]
     hy = x[:,2] * v[:,0] - x[:,0] * v[:,2]
@@ -77,17 +90,25 @@ def xv_to_elements(x, v, ki):
     sinlnode = (P[:,1] * Q[:,2] - P[:,2] * Q[:,1]) / PQz
     lnode = jnp.where(PQz!=0., jnp.arctan2(sinlnode, coslnode), 0.)
 
-    pdic = {'period': 2 * jnp.pi / n, 'ecc': e, 'cosi': jnp.cos(inc), 'omega': omega, 'lnode': lnode,
-            'cosw': jnp.cos(omega), 'sinw': jnp.sin(omega),
-            'ea': E, 'ma': E - esinE0, 'a': a}
-    return pdic
+    return jnp.array([a, n, e, inc, omega, lnode, E - esinE0])
 
 @jit
 def initialize_from_elements(elements, masses, t_epoch):
+    """ compute initial position/velocity from JaxTTV elements
+        here the elements are interpreted as Jacobi using the total interior mass (see Rein & Tamayo 2015)
+
+        Args:
+            elements: orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
+            masses: masses of the bodies (Nbody,)
+            t_epoch: epoch at which elements are defined
+
+        Returns:
+            Jacobi position/velocity at t_epoch
+
+    """
     xrel, vrel = [], []
     for j in range(len(elements)):
         #porb, ecc, inc, omega, lnode, tic = elements[j]
-
         porb, ecosw, esinw, cosi, lnode, tic = elements[j]
         ecc = jnp.sqrt(ecosw**2 + esinw**2)
         omega = jnp.arctan2(esinw, ecosw)

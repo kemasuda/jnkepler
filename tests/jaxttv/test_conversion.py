@@ -19,7 +19,10 @@ def test_conversion():
     t_start, t_end = 155., 1495 + 1455
     jttv = JaxTTV(t_start, t_end, dt)
     jttv.set_tcobs(tcobs, p_init)
-    p = jttv.get_elements(params_jttv, t_start, wh=True)
+    #p = jttv.get_elements(params_jttv, t_start, wh=True)
+    _, n, ecc, inc, omega, lnode, ma = jttv.get_elements(params_jttv, WHsplit=True)
+    p = {'period': 2 * np.pi / n, 'ecc': ecc, 'cosi': np.cos(inc), 'omega': omega, 'lnode': lnode, 'ma': ma}
+
     ptrue = pd.read_csv(path+"kep51_dt1.0_start155.00_end2950.00_pdict_ttvfast.csv")
 
     assert p['period'] == pytest.approx(np.array(ptrue[['period%d'%i for i in range(len(p_init))]])[0])
