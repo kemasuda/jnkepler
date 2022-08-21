@@ -1,3 +1,7 @@
+""" 4th-order Hermite integrator based on Kokubo, E., & Makino, J. 2004, PASJ, 56, 861
+used for transit time computation
+"""
+
 #%%
 import jax.numpy as jnp
 from jax import jit, vmap, grad
@@ -16,14 +20,6 @@ def get_derivs(x, v, masses):
 
     x2jk = jnp.where(x2jk!=0., x2jk, jnp.inf)
     x2jkinv = 1. / x2jk
-
-    # also works
-    #x2jk = jnp.where(x2jk!=0., x2jk, 1)
-    #x2jkinv = jnp.where(x2jk!=0., 1. / x2jk, 0)
-
-    # this doesn't work
-    #x2jkinv = jnp.nan_to_num(1. / x2jk, posinf=0.)
-
     x2jkinv1p5 = x2jkinv * jnp.sqrt(x2jkinv)
     Xjk = - xjk * x2jkinv1p5
     dXjk = (- vjk + 3 * xvjk * xjk * x2jkinv) * x2jkinv1p5
@@ -57,22 +53,6 @@ def hermite4_step(x, v, masses, dt):
 
 hermite4_step_vmap = jit(vmap(hermite4_step, (0,0,None,0), 2)) # xva, body idx, xyz, transit idx
 
-"""
-def hermite4_step_iterate(x, v, masses, dt, nitr=2):
-    a, dota = get_derivs(x, v, masses)
-    xp, vp = predict(x, v, a, dota, dt)
-    a1, dota1 = get_derivs(xp, vp, masses)
-    xc, vc = correct(xp, vp, a1, dota1, a, dota, dt)
-
-    for i in range(nitr):
-        #xtmp, vtmp = xc, vc
-        a1, dot1 = get_derivs(xc, vc, masses)
-        xc, vc = correct(xp, vp, a1, dota1, a, dota, dt)
-        #print (jnp.max(jnp.abs(xc-xtmp)/xtmp), jnp.max(jnp.abs(vc-vtmp)/vtmp))
-
-    return xc, vc, a1
-"""
-
 #@jit
 def integrate_xv(x, v, masses, times):
     dtarr = jnp.diff(times)
@@ -101,9 +81,6 @@ def get_gderivs(xastj, vastj, aastj):
     dotgj = jnp.sum(vastj[:,:2] * vastj[:,:2], axis=1) + jnp.sum(xastj[:,:2] * aastj[:,:2], axis=1)
     return gj, dotgj
 
-#xkey, vkey, akey = 0, 1, 2
-#def find_transit_times_nodata(t, xva, j, masses, nitr=3):
-    #x, v, a = xva[:,xkey,:,:], xva[:,vkey,:,:], xva[:,akey,:,:]
 def find_transit_times_nodata(t, x, v, a, j, masses, nitr=5):
     xastj, vastj, aastj = cm_to_astrocentric(x, v, a, j)
     gj, dotgj = get_gderivs(xastj, vastj, aastj)
@@ -125,40 +102,32 @@ def find_transit_times_nodata(t, x, v, a, j, masses, nitr=5):
         _gj, _dotgj = get_gderivs(_xastj, _vastj, _aastj)
         nrstep = - _gj / _dotgj
 
-    return tc#, gj
+    return tc
 
 #@jit
 def findidx(arr, x):
     return jnp.argmin(jnp.abs(arr - x))
 findidx_map = jit(vmap(findidx, (None,0), 0))
 
-#def find_transit_times(t, xva, j, tcobs, masses, nitr=5):
-#    x, v, a = xva[:,xkey,:,:], xva[:,vkey,:,:], xva[:,akey,:,:]
-#@jit
 def find_transit_times(t, x, v, a, j, tcobs, masses, nitr=5):
+    """ routine to find transit times
+
+        Args:
+            t: times
+            x, v, a: position, velocity, acceleration (Ntime, Norbit, Nxyz)
+            j: orbit index
+            tcobs: observed transit times for jth orbit (planet)
+            masses: masses of the bodies
+
+        Returns:
+            N-body transit times nearest to the observed ones
+
+    """
     xastj, vastj, aastj = cm_to_astrocentric(x, v, a, j)
     gj, dotgj = get_gderivs(xastj, vastj, aastj)
 
-    """ too slow
-    tcidx_bool = (gj[1:] * gj[:-1] < 0) & (xastj[1:,2] > 0) & (dotgj[1:] > 0)
-    _tcarr = jnp.where(tcidx_bool, t[1:], -1000)
-    tcidx = findidx_map(_tcarr, tcobs)
-    tc = t[1:][tcidx]
-    nrstep = - (gj / dotgj)[1:][tcidx]
-    xtc = x[1:,:,:][tcidx]
-    vtc = v[1:,:,:][tcidx]
-    """
-
-    """ fast but could be inaccurate
-    tcidx = jnp.searchsorted(t, tcobs)
-    tc = t[tcidx]
-    nrstep = - (gj / dotgj)[tcidx]
-    xtc = x[tcidx]
-    vtc = v[tcidx]
-    """
-
-    # reasonable
-    #"""
+    # get t, x, v where tcidx=True; difficult to make this compatible with jit
+    # should be improved
     tcidx = (gj[1:] * gj[:-1] < 0) & (xastj[1:,2] > 0) & (dotgj[1:] > 0)
     _tc = jnp.where(tcidx, t[1:], -jnp.inf)
     idxsort = jnp.argsort(_tc)
@@ -172,7 +141,6 @@ def find_transit_times(t, x, v, a, j, tcobs, masses, nitr=5):
     nrstep = - (gj / dotgj)[1:][idxsort][tcidx]
     xtc = x[1:,:,:][idxsort][tcidx]
     vtc = v[1:,:,:][idxsort][tcidx]
-    #"""
 
     def tcstep(xvs, i):
         xin, vin, step = xvs
@@ -188,75 +156,25 @@ def find_transit_times(t, x, v, a, j, tcobs, masses, nitr=5):
     _, steps = scan(tcstep, [xtc, vtc, nrstep], jnp.arange(nitr))
     tc += nrstep + jnp.sum(steps, axis=0)
 
-    """
-    for i in range(nitr):
-        tc += nrstep
-        xtc, vtc, atc = hermite4_step_vmap(xtc, vtc, masses, nrstep)
-        xtc = jnp.transpose(xtc, axes=[2,0,1])
-        vtc = jnp.transpose(vtc, axes=[2,0,1])
-        atc = jnp.transpose(atc, axes=[2,0,1])
-        _xastj, _vastj, _aastj = cm_to_astrocentric(xtc, vtc, atc, j)
-        _gj, _dotgj = get_gderivs(_xastj, _vastj, _aastj)
-        nrstep = - _gj / _dotgj
-    """
-
     return tc
 
 #@jit
 def find_transit_times_planets(t, xva, tcobs, masses):
+    """ find transit times for every planet (should make this part mappable to eliminate for loop?)
+
+        Args:
+            t: times
+            xva: position, velocity, acceleration (Nstep, xva, Norbit, xyz)
+            tcobs: observed transit times, list(!) of length Norbit
+            masses: masses of the bodies
+
+        Returns:
+            N-body transit times (1D array)
+
+    """
     tcarr = jnp.array([])
     for j in range(1,len(masses)):
         #tc = find_transit_times(t, xva, j, tcobs[j-1], masses)
         tc = find_transit_times(t, xva[:,0,:,:], xva[:,1,:,:], xva[:,2,:,:], j, tcobs[j-1], masses)
         tcarr = jnp.hstack([tcarr, tc])
     return tcarr
-
-#%%
-"""
-import numpy as np
-import matplotlib.pyplot as plt
-from jax import grad
-
-#%%
-#elements = jnp.array([[365.25, 0.4*jnp.cos(0.1*jnp.pi), 0.4*jnp.sin(0.1*jnp.pi), 0, 0.1*jnp.pi, 40], [365.25*2., 0., 0, 0, 0.1*jnp.pi, 40]])
-#masses = jnp.array([1, 300e-6, 300e-6])
-
-#%%
-elements = jnp.array([[10, 0.1*jnp.cos(0.1*jnp.pi), 0.1*jnp.sin(0.1*jnp.pi), 0, 0, 2], [20.2, 0.2*jnp.cos(0.1*jnp.pi), 0.2*jnp.sin(0.1*jnp.pi), 0, 0, 3]])
-masses = jnp.array([1, 30e-6, 30e-6])
-
-#%%
-dt = 0.01
-t_start, t_end = 10, 4 * 365.25
-times = jnp.arange(t_start, t_end, dt)
-print (elements[0][0] / dt)
-
-#%%
-%timeit t, xva = integrate_elements(elements, masses, times, t_start)
-t, xva = integrate_elements(elements, masses, times, t_start)
-
-#%%
-#from jax import make_jaxpr
-#make_jaxpr(integrate_xv)(xva[0,0,:,:], xva[0,1,:,:], masses, times)
-
-#%%
-%time etot = get_energy_vmap(xva[:,0,:,:], xva[:,1,:,:], masses)
-
-#%%
-plt.figure()
-plt.plot(t, etot/etot[0] - 1., '-', label='$\Delta E/E = %.2e$'%get_ediff(xva, masses))
-plt.legend();
-
-#%%
-tcobs = [find_transit_times_nodata(t, xva[:,0,:,:], xva[:,1,:,:], xva[:,2,:,:], j+1, masses) for j in range(len(masses)-1)]
-
-#%%
-%timeit tpars = find_transit_times_planets(t, xva, tcobs, masses)
-tpars = find_transit_times_planets(t, xva, tcobs, masses)
-
-#%%
-func = lambda masses: jnp.sum(find_transit_times_planets(t, xva, tcobs, masses))
-%timeit func(masses)
-dfunc = grad(func)
-%timeit dfunc(masses)
-"""

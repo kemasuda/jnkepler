@@ -33,7 +33,7 @@ def tic_to_m(tic, period, ecc, omega, t_epoch):
 
 @jit
 def elements_to_xvrel(porb, ecc, inc, omega, lnode, u, mass):
-    """ convert elemetns to position/velocity
+    """ convert elements to position/velocity
 
         Args:
             mass -> should be ki?
@@ -90,7 +90,7 @@ def xv_to_elements(x, v, ki):
     sinlnode = (P[:,1] * Q[:,2] - P[:,2] * Q[:,1]) / PQz
     lnode = jnp.where(PQz!=0., jnp.arctan2(sinlnode, coslnode), 0.)
 
-    return jnp.array([a, n, e, inc, omega, lnode, E - esinE0])
+    return jnp.array([a, 2*jnp.pi/n, e, inc, omega, lnode, E - esinE0])
 
 @jit
 def initialize_from_elements(elements, masses, t_epoch):
@@ -167,13 +167,6 @@ def get_acm(x, masses):
     x2jk = jnp.sum(xjk * xjk, axis=1)[:,None,:]
     x2jk = jnp.where(x2jk!=0., x2jk, jnp.inf)
     x2jkinv = 1. / x2jk
-
-    # also works
-    #x2jk = jnp.where(x2jk!=0., x2jk, 1)
-    #x2jkinv = jnp.where(x2jk!=0., 1. / x2jk, 0)
-
-    # this doesn't work
-    #x2jkinv = jnp.nan_to_num(1. / x2jk, posinf=0.)
 
     x2jkinv1p5 = x2jkinv * jnp.sqrt(x2jkinv)
     Xjk = - xjk * x2jkinv1p5

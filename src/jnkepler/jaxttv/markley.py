@@ -13,7 +13,6 @@ def get_E1(M, e, alpha):
     w = (jnp.abs(r) + jnp.sqrt(q*q*q + r*r))**(2./3.)
     z = 2*r*w/(w*w+w*q+q*q) + M
     return z/d
-#%timeit z = get_E1(M, e, alpha)
 
 #%%
 @jit
