@@ -23,7 +23,7 @@ def test_reproduce():
     jttv = JaxTTV(t_start, t_end, dt)
     jttv.set_tcobs(tcobs, p_init)
     tc, de = jttv.get_ttvs(*params_to_elements(params_jttv, jttv.nplanet))
-    assert np.max(np.abs(tc - tc_jttv)) < 1e-12
+    assert np.max(np.abs(tc - tc_jttv)) < 1e-10
 
 #%%
 if __name__ == '__main__':
