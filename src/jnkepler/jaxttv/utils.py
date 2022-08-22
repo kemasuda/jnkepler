@@ -160,7 +160,7 @@ def initialize_from_elements(elements, masses, t_epoch):
             Jacobi positions and velocities at t_epoch (Norbit, xyz)
 
     """
-    xrel, vrel = [], []
+    xjac, vjac = [], []
     for j in range(len(elements)):
         #porb, ecc, inc, omega, lnode, tic = elements[j]
         porb, ecosw, esinw, cosi, lnode, tic = elements[j]
