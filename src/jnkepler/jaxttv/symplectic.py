@@ -10,8 +10,19 @@ from jax.config import config
 config.update('jax_enable_x64', True)
 
 #%%
-#@jit
 def dEstep(x, ecosE0, esinE0, dM):
+    """ single step to solve incremental Kepler's equation to obtain delta(eccentric anomaly)
+
+        Args:
+            x: initial guess for dE
+            ecosE0, esinE0: eccentricity and eccentric anomaly at the initial state
+            dM: delta(mean anomaly)
+
+        Returns:
+            delta(eccentric anomaly) from single iteration
+
+
+    """
     x2 = x / 2.0
     sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
     sx, cx = 2.0*sx2*cx2, cx2*cx2 - sx2*sx2
@@ -28,6 +39,20 @@ def dEstep(x, ecosE0, esinE0, dM):
 #%%
 #@jit
 def kepler_step(x, v, gm, dt, nitr=3):
+    """ Kepler step
+
+        Args:
+            x: positions (Norbit, xyz)
+            v: velocities (Norbit, xyz)
+            gm: 'GM' in Kepler's 3rd law
+            dt: time step
+            nitr: number of iterations (currently needs to be fixed)
+
+        Returns:
+            new positions (Norbit, xyz)
+            new velocities (Norbit, xyz)
+
+    """
     r0 = jnp.sqrt(jnp.sum(x*x, axis=1))
     v0s = jnp.sum(v*v, axis=1)
     u = jnp.sum(x*v, axis=1)
@@ -54,8 +79,19 @@ def kepler_step(x, v, gm, dt, nitr=3):
 
     return x_new, v_new
 
-#%% interaction Hamiltonian devided by Gm_0m_0
 def Hint(x, v, masses):
+    """ interaction Hamiltonian devided by Gm_0m_0
+
+        Args:
+            x: positions (Norbit, xyz)
+            v: velocities (Norbit, xyz)
+            masses: masses of the bodies (Nbody,), solar unit
+
+        Returns:
+            value of interaction Hamiltonian
+
+    """
+
     mu = masses[1:] / masses[0]
 
     ri = jnp.sqrt(jnp.sum(x * x, axis=1))
@@ -77,16 +113,58 @@ def Hint(x, v, masses):
 gHint = grad(Hint)
 
 def Hintgrad(x, v, masses):
+    """ gradient of the interaction Hamiltonian
+    times (star mass / planet mass)
+
+        Args:
+            x: positions (Norbit, xyz)
+            v: velocities (Norbit, xyz)
+            masses: masses of the bodies (Nbody,), solar unit
+
+        Returns:
+            gradient of interaction Hamiltonian x (star mass / planet mass)
+
+
+    """
     return gHint(x, v, masses) * (masses[0] / masses[1:])[:,None]
 
 #%%
 #@jit
 def nbody_kicks(x, v, ki, masses, dt):
+    """ apply N-body kicks to velocities
+
+        Args:
+            x: positions (Norbit, xyz)
+            v: velocities (Norbit, xyz)
+            ki: GM values
+            masses: masses of the bodies (Nbody,), solar unit
+            dt: time step
+
+        Returns:
+            positions
+            kicked velocities
+
+    """
     dv = - ki[:, None] * dt * Hintgrad(x, v, masses)
     return x, v+dv
 
 #@jit
 def symplectic_step(x, v, ki, masses, dt):
+    """ advance the system by a single symplectic step
+    (0.5dt kepler) -> (velocity kick) -> (0.5dt kepler again)
+
+        Args:
+            x: positions (Norbit, xyz)
+            v: velocities (Norbit, xyz)
+            ki: GM values
+            masses: masses of the bodies (Nbody,), solar unit
+            dt: time step
+
+        Returns:
+            new positions
+            new velocities
+
+    """
     dt2 = 0.5 * dt
     x, v = kepler_step(x, v, ki, dt2)
     x, v = nbody_kicks(x, v, ki, masses, dt)
@@ -95,27 +173,40 @@ def symplectic_step(x, v, ki, masses, dt):
 
 #@jit
 def integrate_xv(x, v, masses, times):
+    """ symplectic integration of the orbits
+
+        Args:
+            x: initial Jacobi positions (Norbit, xyz)
+            v: initial Jacobi velocities (Norbit, xyz)
+            masses: masses of the bodies (Nbody,), in units of solar mass
+            times: cumulative sum of time steps
+
+        Returns:
+            times (initial time omitted)
+            Jacobi position/velocity array (Nstep, x or v, Norbit, xyz)
+
+    """
     ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
     dtarr = jnp.diff(times)
 
+    # transformation between the mapping and real Hamiltonian
     x, v = real_to_mapTO(x, v, ki, masses, dtarr[0])
 
+    # single Kepler step (could be summarized as sympletic_step above)
     def step(xvin, dt):
         x, v = xvin
         dt2 = 0.5 * dt
         x, v = kepler_step(x, v, ki, dt2)
         x, v = nbody_kicks(x, v, ki, masses, dt)
         xout, vout = kepler_step(x, v, ki, dt2)
-        #xout, vout = symplectic_step(x, v, ki, masses, dt)
         return [xout, vout], jnp.array([xout, vout])
 
     _, xv = scan(step, [x, v], dtarr)
 
     return times[1:], xv
 
-#%%
-#@jit
 def compute_corrector_coefficientsTO():
+    """ coefficients for the third-order corrector """
     corr_alpha = jnp.sqrt(7./40.)
     corr_beta = 1./(48.0*corr_alpha)
 
@@ -124,15 +215,39 @@ def compute_corrector_coefficientsTO():
 
     return TOa1, TOa2, TOb1, TOb2
 
-#@jit
 def corrector_step(x, v, ki, masses, a, b):
+    """ corrector step
+
+        Args:
+            x: positions (Norbit, xyz)
+            v: velocities (Norbit, xyz)
+            ki: GM values
+            masses: masses of the bodies (Nbody,), solar unit
+            a, b: corrector steps
+
+        Returns:
+            new positions and velocities
+
+    """
     _x, _v = kepler_step(x, v, ki, -a)
     _x, _v = nbody_kicks(_x, _v, ki, masses, b)
     _x, _v = kepler_step(_x, _v, ki, a)
     return _x, _v
 
-#@jit
 def real_to_mapTO(x, v, ki, masses, dt):
+    """ transformation between real and mapping coordinates
+
+        Args:
+            x: positions (Norbit, xyz)
+            v: velocities (Norbit, xyz)
+            ki: GM values
+            masses: masses of the bodies (Nbody,), solar unit
+            dt: time step
+
+        Returns:
+            mapped positions and velocities
+
+    """
     TOa1, TOa2, TOb1, TOb2 = compute_corrector_coefficientsTO()
     _x, _v = corrector_step(x, v, ki, masses, TOa2*dt, TOb2*dt)
     _x, _v = corrector_step(_x, _v, ki, masses, TOa1*dt, TOb1*dt)
@@ -140,22 +255,47 @@ def real_to_mapTO(x, v, ki, masses, dt):
 
 #%%
 from functools import partial
-from .hermite4 import find_transit_times, get_derivs
+from .hermite4 import find_transit_times, get_derivs # not used?
 a2cm_map = vmap(astrocentric_to_cm, (0,0,None), 0)
-geta_map = vmap(get_acm, (0,None), 0)
-j2a_map = vmap(jacobi_to_astrocentric, (0,0,None), 0)
+geta_map = vmap(get_acm, (0,None), 0) 
+j2a_map = vmap(jacobi_to_astrocentric, (0,0,None), 0) # not used?
 
 #@jit
 def xvjac_to_xvacm(xv, masses):
+    """ Conversion from Jacobi to center-of-mass
+    xv is assumed to be the result of integration: 1st axis is for the times.
+
+        Args:
+            xv: positions and velocities in Jacobi coordinates (Nstep, x or v, Norbit, xyz)
+            masses: masses of the bodies (Nbody,), solar unit
+
+        Returns:
+            positions in the CoM frame (Nstep, Norbit)
+            velocities in the CoM frame
+            accelerations in the CoM frame
+
+    """
     xa, va = jacobi_to_astrocentric(xv[:,0,:], xv[:,1,:], masses)
     xcm, vcm = a2cm_map(xa, va, masses)
-    #acm, _ = geta_map(xcm, vcm, masses)
     acm = geta_map(xcm, masses)
     return xcm, vcm, acm
 
 #@jit
 def find_transit_times_planets(t, x, v, a, tcobs, masses):
-    #x, v, a = xvjac_to_xvacm(xv, masses)
+    """ find transit times: loop over each planet (should be modified)
+
+        Args:
+            t: times
+            x: positions in CoM frame (Nstep, Norbit, xyz)
+            v: velocities in CoM frame (Nstep, Norbit, xyz)
+            a: accelerations in CoM frame (Nstep, Norbit, xyz)
+            tcobs: list of observed transit times
+            masses: masses of the bodies (in units of solar mass)
+
+        Returns:
+            model transit times (1D flattened array)
+
+    """
     tcarr = jnp.array([])
     for j in range(len(masses)-1):
         tc = find_transit_times(t, x, v, a, j+1, tcobs[j], masses)
@@ -164,6 +304,18 @@ def find_transit_times_planets(t, x, v, a, tcobs, masses):
 
 #@partial(jit, static_argnums=(0,))
 def get_ttvs(self, elements, masses):
+    """ compute model transit times given orbtal elements and masses
+
+        Args:
+            self: JaxTTV class
+            elements: orbital elements in JaxTTV format
+            masses: masses of the bodies (in units of solar mass)
+
+        Returns:
+            model transit times (1D flattened array)
+            fractional energy change
+
+    """
     x0, v0 = initialize_from_elements(elements, masses, self.t_start)
     t, xv = integrate_xv(x0, v0, masses, self.times)
     x, v, a = xvjac_to_xvacm(xv, masses)

@@ -45,6 +45,7 @@ def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
     for key in list(pdic.keys()):
         if key not in outkeys:
             pdic.pop(key)
+
     return pdic
 
 def params_to_elements(params, npl):
@@ -54,7 +55,17 @@ def params_to_elements(params, npl):
 
 #%%
 class JaxTTV:
+    """ main class """
     def __init__(self, t_start, t_end, dt, symplectic=True):
+        """ initialization
+
+            Args:
+                t_start: start time of integration
+                t_end: end time of integration
+                dt: integration time step (day)
+
+        """
+
         self.t_start = t_start
         self.t_end = t_end
         self.dt = dt
@@ -65,7 +76,18 @@ class JaxTTV:
         else:
             print ("# hermite integrator is used.")
 
-    def set_tcobs(self, tcobs, p_init, errorobs=None):
+    def set_tcobs(self, tcobs, p_init, errorobs=None, print=True):
+        """ set observed transit times
+        JaxTTV returns transit times that are closest to the observed times,
+        rather than all the transit times between t_start and t_end
+
+            Args:
+                tcobs: list of the arrays of transit times for each planet
+                p_init: initial guess for the mean orbital period of each planet
+                errorobs: transit time error (currently assumed to be Gaussian),same format as tcobs
+
+        """
+
         self.tcobs = tcobs
         self.tcobs_flatten = np.hstack([t for t in tcobs])
         self.nplanet = len(tcobs)
@@ -99,22 +121,47 @@ class JaxTTV:
         self.tcobs_linear = tcobs_linear
         self.ttvamp = ttvamp
 
-        print ("# integration starts at:".ljust(35) + "%.2f"%self.t_start)
-        print ("# first transit time in data:".ljust(35) + "%.2f"%np.min(self.tcobs_flatten))
-        print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(self.tcobs_flatten))
-        print ("# integration ends at:".ljust(35) + "%.2f"%self.t_end)
-        print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
+        if print:
+            print ("# integration starts at:".ljust(35) + "%.2f"%self.t_start)
+            print ("# first transit time in data:".ljust(35) + "%.2f"%np.min(self.tcobs_flatten))
+            print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(self.tcobs_flatten))
+            print ("# integration ends at:".ljust(35) + "%.2f"%self.t_end)
+            print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
 
     def update_period(self):
-        p_new = []
+        """ Re-derive linear ephemeris if necessary
+
+            Returns:
+                array of t0, array of P from linear fitting
+
+        """
+
+        p_new, t0_new = [], []
         for j in range(self.nplanet):
             tc = self.tcobs[j]
             m = np.round((tc - tc[0]) / self.p_init[j])
             pfit, t0fit = np.polyfit(m, tc, deg=1)
+            t0_new.append(t0fit)
             p_new.append(pfit)
-        return np.array(p_new)
+        return np.array(t0fit), np.array(p_new)
 
     def integrate(self, elements, masses, t_start, t_end, dt):
+        """ integrate the orbits using Hermite integrator
+
+            Args:
+                elements: orbital elements in JaxTTV format
+                masses: masses of the bodies (in units of solar mass)
+                t_start: beginning of integration
+                t_end: end of integration
+                dt: integration time step (day)
+
+            Returns:
+                t: array of times
+                xva: position (x), velocity (v), acceleration (a)
+                    shape = (time, x or v or a, orbit, cartesian component)
+                energy: total energy at each time
+
+        """
         times = jnp.arange(t_start, t_end, dt)
         t, xva = integrate_elements(elements, masses, times, t_start)
         energy = get_energy_vmap(xva[:,0,:,:], xva[:,1,:,:], masses)
@@ -122,6 +169,18 @@ class JaxTTV:
 
     @partial(jit, static_argnums=(0,))
     def get_ttvs(self, elements, masses):
+        """ compute model transit times (jitted version)
+        Returns only transit times that are closest to the observed times.
+
+            Args:
+                elements: orbital elements in JaxTTV format
+                masses: masses of the bodies (in units of solar mass)
+
+            Returns:
+                1D flattened array of transit times
+                fractional energy change
+
+        """
         if self.symplectic:
             return jttvfast(self, elements, masses)
         else:
@@ -130,6 +189,23 @@ class JaxTTV:
             return find_transit_times_planets(t, xva, self.tcobs, masses), de_frac
 
     def get_ttvs_nojit(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False, nitr=5):
+        """ compute model transit times w/o jit
+        Unlike the jitted version, this function returns all the transit times between t_start and t_end for each planet.
+
+            Args:
+                elements: orbital elements in JaxTTV format
+                masses: masses of the bodies (in units of solar mass)
+                t_start: beginning of integration
+                t_end: end of integration
+                dt: integration time step (day)
+                flatten: if True, the returned transit time array is flattened
+                nitr: # of iterations in transit-search loop
+
+            Returns:
+                list or 1D array (flatten=True) of model transit times
+                fractional energy change
+
+        """
         if t_start is not None:
             times, t0 = jnp.arange(t_start, t_end, dt), t_start
         else:
@@ -148,6 +224,14 @@ class JaxTTV:
         return tcarr, de_frac
 
     def quicklook(self, model, sigma=None, save=None):
+        """ plot observed and model TTVs
+
+            Args:
+                model: model transit times (1D flattened)
+                sigma: model uncertainty (e.g. SD of posterior models)
+                save: name of the plots when they are saved
+
+        """
         data = self.tcobs_flatten
         for j in range(self.nplanet):
             idx = self.pidx==j+1
@@ -172,6 +256,14 @@ class JaxTTV:
                 plt.savefig(save+"%d.png"%(j+1), dpi=200, bbox_inches="tight")
 
     def check_residuals(self, tc, jitters=None):
+        """ plot residuals from a given model
+        Compare the histogram of O-C with Gaussians.
+
+            Args:
+                model: model transit times (1D flattened)
+                jitters: may be added to errorobs_flatten
+
+        """
         if jitters is not None:
             jitters = np.atleast_1d(jitters)
             if len(jitters) == 1:
@@ -210,6 +302,17 @@ class JaxTTV:
             ax[1].legend(loc='lower right')
 
     def check_prec(self, params, dtfrac=1e-3, nitr=10):
+        """ compare get_ttvs outputs with those from get_ttvs_nojit with small timestep
+        to check the precision of the former
+
+            Args:
+                params: JaxTTV parameter array
+                dtfrac: self.dt*dtfrac is used for the comparison integration
+
+            Returns:
+                model transit times from get_ttvs
+
+        """
         tc, de = self.get_ttvs(*params_to_elements(params, self.nplanet))
         print ("# fractional energy error (symplectic, dt=%.2e): %.2e" % (self.dt,de))
 
@@ -224,8 +327,13 @@ class JaxTTV:
 
         return tc
 
-    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6],
-          amoeba=False, plot=True, save=None, pinit=None, jacrev=False):
+    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False):
+        """ find maximum-likelihood parameters
+
+            Returns:
+                set of parameters (JaxTTV format)
+
+        """
         from scipy.optimize import curve_fit
         import time
 
@@ -286,6 +394,18 @@ class JaxTTV:
         return pfinal
 
     def get_elements(self, params, WHsplit=False):
+        """ convert JaxTTV parameter array into more normal sets of parameters
+
+            Args:
+                params: JAX TTV parameter array
+                WHsplit: elements are converted to coordinates assuming Wisdom-Holman splitting. This should be True when the output is used for TTVFast.
+
+            Returns:
+                (semi-major axis, period, eccentricity, inclination, argument of periastron, longitude of ascending node, mean anomaly) x (orbits)
+
+                angles are in radians
+
+        """
         elements, masses = params_to_elements(params, self.nplanet)
         xjac, vjac = initialize_from_elements(elements, masses, self.t_start)
 
