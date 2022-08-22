@@ -1,5 +1,5 @@
 # jnkepler
-modeling non-Keplerian dynamics using jax
+modeling non-Keplerian dynamics using jax (develop branch)
 
 ## Installation
 
