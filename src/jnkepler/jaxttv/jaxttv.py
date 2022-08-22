@@ -76,7 +76,7 @@ class JaxTTV:
         else:
             print ("# hermite integrator is used.")
 
-    def set_tcobs(self, tcobs, p_init, errorobs=None, print=True):
+    def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
         """ set observed transit times
         JaxTTV returns transit times that are closest to the observed times,
         rather than all the transit times between t_start and t_end
@@ -121,7 +121,7 @@ class JaxTTV:
         self.tcobs_linear = tcobs_linear
         self.ttvamp = ttvamp
 
-        if print:
+        if print_info:
             print ("# integration starts at:".ljust(35) + "%.2f"%self.t_start)
             print ("# first transit time in data:".ljust(35) + "%.2f"%np.min(self.tcobs_flatten))
             print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(self.tcobs_flatten))
