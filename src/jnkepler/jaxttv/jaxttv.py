@@ -17,6 +17,18 @@ config.update('jax_enable_x64', True)
 #%%
 M_earth = 3.0034893e-6
 def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
+    """ convert JaxTTV elements/masses into dictionary
+
+        Args:
+            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
+            masses: masses of the bodies (Nbody,)
+            outkeys: if specified only include these keys in the output
+            force_coplanar: if True, set incl=pi/2 and lnode=0
+
+        Returns:
+            dicionary of the parameters
+
+    """
     npl = len(masses) - 1
     pdic = {}
     pdic['pmass'] = masses[1:] / M_earth
@@ -49,6 +61,17 @@ def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
     return pdic
 
 def params_to_elements(params, npl):
+    """ convert JaxTTV parameter array into element and mass arrays
+
+        Args:
+            params: JaxTTV parameter array
+            npl: number of orbits (planets)
+
+        Returns:
+            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
+            masses: masses of the bodies (Nbody,)
+
+    """
     elements = jnp.array(params[:-npl].reshape(npl, -1))
     masses = jnp.exp(jnp.hstack([[0], params[-npl:]]))
     return elements, masses
