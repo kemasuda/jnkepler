@@ -26,7 +26,6 @@ class JaxTTV:
                 dt: integration time step (day)
 
         """
-
         self.t_start = t_start
         self.t_end = t_end
         self.dt = dt
@@ -43,7 +42,6 @@ class JaxTTV:
                 errorobs: transit time error (currently assumed to be Gaussian),same format as tcobs
 
         """
-
         self.tcobs = tcobs
         self.tcobs_flatten = np.hstack([t for t in tcobs])
         self.nplanet = len(tcobs)
@@ -91,7 +89,6 @@ class JaxTTV:
                 array of t0, array of P from linear fitting
 
         """
-
         p_new, t0_new = [], []
         for j in range(self.nplanet):
             tc = self.tcobs[j]
@@ -142,7 +139,8 @@ class JaxTTV:
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=nitr_kepler)
         xcm, vcm, acm = xvjac_to_xvacm(xvjac, masses)
         etot = get_energy_map(xcm, vcm, masses)
-        transit_times = find_transit_times_planets(times, xcm, vcm, acm, self.tcobs, masses, nitr=nitr_transit)
+        #transit_times = find_transit_times_planets(times, xcm, vcm, acm, self.tcobs, masses, nitr=nitr_transit)
+        transit_times = find_transit_times_all(self.pidx.astype(int)-1, self.tcobs_flatten, times, xcm, vcm, acm, masses, nitr=nitr_transit)
         return transit_times, etot[-1]/etot[0]-1.
 
     def get_ttvs_nodata(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,

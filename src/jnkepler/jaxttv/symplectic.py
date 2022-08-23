@@ -24,7 +24,6 @@ def dEstep(x, ecosE0, esinE0, dM):
         Returns:
             delta(eccentric anomaly) from single iteration
 
-
     """
     x2 = x / 2.0
     sx2, cx2 = jnp.sin(x2), jnp.cos(x2)

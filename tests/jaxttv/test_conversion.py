@@ -16,15 +16,9 @@ def test_convert_elements():
     d = pd.read_csv(path+"kep51_ttv.txt", delim_whitespace=True, header=None, names=['tnum', 'tc', 'tcerr', 'dnum', 'planum'])
     tcobs = [np.array(d.tc[d.planum==j+1]) for j in range(3)]
     params_jttv = np.loadtxt(path+"kep51_dt1.0_start155.00_end2950.00_params.txt")
-    dt = 0.5 * 2
-    t_start, t_end = 155., 1495 + 1455
-    """
-    jttv = JaxTTV(t_start, t_end, dt)
-    jttv.set_tcobs(tcobs, p_init)
-    """
+    t_start = 155.
     elements, masses = params_to_elements(params_jttv, len(p_init))
     _, period, ecc, inc, omega, lnode, ma = convert_elements(elements, masses, t_start, WHsplit=True)[0]
-    #_, period, ecc, inc, omega, lnode, ma = jttv.get_elements(params_jttv, WHsplit=True)
     p = {'period': period, 'ecc': ecc, 'cosi': np.cos(inc), 'omega': omega, 'lnode': lnode, 'ma': ma}
 
     ptrue = pd.read_csv(path+"kep51_dt1.0_start155.00_end2950.00_pdict_ttvfast.csv")

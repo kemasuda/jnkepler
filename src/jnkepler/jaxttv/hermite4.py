@@ -122,7 +122,6 @@ def integrate_xv(x, v, masses, times):
             CoM position/velocity array (Nstep, x or v, Norbit, xyz)
 
     """
-
     dtarr = jnp.diff(times)
 
     def step(xvin, dt):
