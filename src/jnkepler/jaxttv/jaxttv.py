@@ -145,10 +145,11 @@ class JaxTTV:
         transit_times = find_transit_times_planets(times, xcm, vcm, acm, self.tcobs, masses, nitr=nitr_transit)
         return transit_times, etot[-1]/etot[0]-1.
 
-    def get_ttvs_nojit(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,
+    def get_ttvs_nodata(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,
         nitr_transit=5):
-        """ compute model transit times w/o jit
-        Unlike the jitted version, this function returns all the transit times between t_start and t_end for each planet. Here Hermite4 integration is used (but this is not necessary).
+        """ compute all model transit times between t_start and t_end
+        This function is much slower than get_ttvs and should not be used for fitting
+        Now Hermite4 integration is used (but this is not necessary).
 
             Args:
                 elements: orbital elements in JaxTTV format
@@ -263,8 +264,8 @@ class JaxTTV:
             ax[1].legend(loc='lower right')
 
     def check_prec(self, params, dtfrac=1e-3, nitr_transit=10):
-        """ compare get_ttvs outputs with those from get_ttvs_nojit with small timestep
-        to check the precision of the former
+        """ compare get_ttvs outputs with those from get_ttvs_data with small timestep
+        to check the precision of the former (may be obsolete)
 
             Args:
                 params: JaxTTV parameter array
@@ -279,8 +280,8 @@ class JaxTTV:
         print ("# fractional energy error (symplectic, dt=%.2e): %.2e" % (self.dt,de))
 
         dtcheck = self.p_init[0] * dtfrac
-        tc2, de2 = self.get_ttvs_nojit(elements, masses, t_start=self.t_start, t_end=self.t_end, dt=dtcheck,
-                                       flatten=True, nitr_transit=nitr_transit)
+        tc2, de2 = self.get_ttvs_nodata(elements, masses, t_start=self.t_start, t_end=self.t_end, dt=dtcheck,
+                                        flatten=True, nitr_transit=nitr_transit)
         tc2 = tc2[np.array(findidx_map(tc2, tc))]
         print ("# fractional energy error (Hermite, dt=%.2e): %.2e" % (dtcheck, de2))
         maxdiff = np.max(np.abs(tc-tc2))
