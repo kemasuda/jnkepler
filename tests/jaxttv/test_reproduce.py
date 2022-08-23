@@ -3,7 +3,8 @@ import pytest
 import glob
 import pandas as pd
 import numpy as np
-from jnkepler.jaxttv import JaxTTV, params_to_elements
+from jnkepler.jaxttv import JaxTTV
+from jnkepler.jaxttv.utils import params_to_elements
 import pkg_resources
 
 #%%

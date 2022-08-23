@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from jax import jit, vmap
 from jax.lax import scan
 from .markley import get_E
+from .conversion import tic_to_u, elements_to_xv
 from jax.config import config
 config.update('jax_enable_x64', True)
 
@@ -78,7 +79,7 @@ def get_energy_diff(xva, masses):
 
     """
     _xva = jnp.array([xva[0,:,:,:], xva[-1,:,:,:]])
-    etot = get_energy_vmap(_xva[:,0,:,:], _xva[:,1,:,:], masses)
+    etot = get_energy_map(_xva[:,0,:,:], _xva[:,1,:,:], masses)
     return etot[1]/etot[0] - 1.
 
 @jit
@@ -185,8 +186,7 @@ def convert_elements(elements, masses, t_epoch, WHsplit=False):
             angles are in radians
 
     """
-    #elements, masses = params_to_elements(params, nplanet)
-    xjac, vjac = initialize_from_elements(elements, masses, t_start)
+    xjac, vjac = initialize_jacobi_xv(elements, masses, t_start)
 
     if WHsplit:
         # for H_Kepler defined in WH splitting (i.e. TTVFast)
