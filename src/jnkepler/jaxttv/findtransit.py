@@ -234,7 +234,7 @@ def find_tc_init_idx(t, tcflag, nrstep, j, tcobs):
     return tcidx, nrstep[1:][tcidx][:,j]
 
 # map along the transit axis
-find_tc_init_idx_map = jit(vmap(find_tc_init_idx, (None,None,None,0,0), 0))
+find_tc_init_idx_map = vmap(find_tc_init_idx, (None,None,None,0,0), 0)
 
 
 def get_nrstep(x, v, a, j):
@@ -259,13 +259,10 @@ def get_nrstep(x, v, a, j):
     return stepj
 
 # map along the transit axis
-get_nrstep_map = jit(vmap(get_nrstep, (0,0,0,0), 0))
+get_nrstep_map = vmap(get_nrstep, (0,0,0,0), 0)
 
-#@partial(jit, static_argnums=(0,))
-#def find_transit_times_all(self, t, x, v, a, masses, nitr=5):
-#self.pidx.astype(int)-1
+
 def find_transit_times_all(pidxarr, tcobsarr, t, x, v, a, masses, nitr=5):
-    print ("new")
     tcflag, nrstep = get_tcflag(t, x, v, a)
     tcidx, nrstep_init = find_tc_init_idx_map(t, tcflag, nrstep, pidxarr, tcobsarr)
     tcidx, nrstep_init = tcidx.ravel(), nrstep_init.ravel()
