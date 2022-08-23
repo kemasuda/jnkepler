@@ -13,7 +13,6 @@ path = pkg_resources.resource_filename('jnkepler', 'data/')
 def test_reproduce():
     pltag = 'kep51'
     p_init = [45.155305, 85.31646, 130.17809]
-    #name = "../../examples/kep51/ttv.txt"
     d = pd.read_csv(path+"%s_ttv.txt"%pltag, delim_whitespace=True, header=None, names=['tnum', 'tc', 'tcerr', 'dnum', 'planum'])
     tcobs = [np.array(d.tc[d.planum==j+1]) for j in range(3)]
     params_jttv = np.loadtxt(glob.glob(path+"%s*params.txt"%pltag)[0])
