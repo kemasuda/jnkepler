@@ -1,7 +1,7 @@
 __all__ = [
     "reduce_angle", "tic_to_u", "tic_to_m", "elements_to_xv", "xv_to_elements",
     "jacobi_to_astrocentric", "j2a_map", "astrocentric_to_cm", "a2cm_map", "cm_to_astrocentric",
-    "xvjac_to_xvacm"
+    "xvjac_to_xvacm", "xvjac_to_xvcm"
 ]
 
 
@@ -26,7 +26,7 @@ def reduce_angle(M):
 
     """
     Mmod = M % (2*jnp.pi)
-    Mred = jnp.where(Mmod >= jnp.pi, Mmod-2*jnp.pi, Mmod) 
+    Mred = jnp.where(Mmod >= jnp.pi, Mmod-2*jnp.pi, Mmod)
     return Mred
 
 
@@ -262,3 +262,22 @@ def xvjac_to_xvacm(xv, masses):
     xcm, vcm = a2cm_map(xa, va, masses)
     acm = geta_map(xcm, masses)
     return xcm, vcm, acm
+
+
+def xvjac_to_xvcm(x, v, masses):
+    """ Conversion from Jacobi to center-of-mass
+    xv is assumed to be the result of integration: 1st axis is for the times.
+
+        Args:
+            xv: positions and velocities in Jacobi coordinates (Nstep, x or v, Norbit, xyz)
+            masses: masses of the bodies (Nbody,), solar unit
+
+        Returns:
+            positions in the CoM frame (Nstep, Norbit)
+            velocities in the CoM frame
+            accelerations in the CoM frame
+
+    """
+    xa, va = jacobi_to_astrocentric(x, v, masses)
+    xcm, vcm = a2cm_map(xa, va, masses)
+    return xcm, vcm
