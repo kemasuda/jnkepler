@@ -4,14 +4,11 @@ import ttvfast
 import glob
 import pandas as pd
 import numpy as np
-#import matplotlib.pyplot as plt
 from jnkepler.jaxttv import JaxTTV
 from jnkepler.jaxttv.utils import params_to_elements
 import itertools
 import timeit
 import pkg_resources
-from jax import jit, grad
-import jax.numpy as jnp
 path = pkg_resources.resource_filename('jnkepler', 'data/')
 
 #%%
@@ -69,15 +66,6 @@ def compare_transit_times(pdic_ttvfast, params_jttv, time=False, dt_factor=1.):
         result = timeit.timeit('jttv.get_ttvs(*params_to_elements(params_jttv, jttv.nplanet))', globals=names, number=loop)
         result_str = "%.2f ms per loop (%d loops)"%(result / loop * 1000, loop)
         print ("JaxTTV timeit:", result_str)
-
-        elements, masses = params_to_elements(params_jttv, jttv.nplanet)
-        func = lambda elements, masses: jnp.sum(jttv.get_ttvs(elements, masses)[0])
-        gfunc = jit(grad(func))
-        names = {**globals(), **locals()}
-        result = timeit.timeit('gfunc(elements, masses)', globals=names, number=loop)
-        result_str = "%.2f ms per loop (%d loops)"%(result / loop * 1000, loop)
-        print ()
-        print ("gradient timeit:", result_str)
 
     return tc_jttv, tc_ttvfast
 
