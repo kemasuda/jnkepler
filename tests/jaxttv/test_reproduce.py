@@ -25,6 +25,9 @@ def test_reproduce():
     tc, de = jttv.get_ttvs(*params_to_elements(params_jttv, jttv.nplanet))
     assert np.max(np.abs(tc - tc_jttv)) < 1e-10
 
+    de_true = float(pd.read_csv(glob.glob(path+"%s*de.csv"%pltag)[0]).de)
+    assert de == pytest.approx(de_true)
+
 #%%
 if __name__ == '__main__':
     test_reproduce()
