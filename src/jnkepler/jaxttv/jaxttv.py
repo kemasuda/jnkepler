@@ -416,25 +416,4 @@ class JaxTTV:
 
         return pfinal
 
-    def get_elements(self, params, WHsplit=False):
-        """ convert JaxTTV parameter array into more normal sets of parameters
-
-            Args:
-                params: JAX TTV parameter array
-                WHsplit: elements are converted to coordinates assuming Wisdom-Holman splitting. This should be True when the output is used for TTVFast.
-
-            Returns:
-                (semi-major axis, period, eccentricity, inclination, argument of periastron, longitude of ascending node, mean anomaly) x (orbits)
-
-                angles are in radians
-
-        """
-        elements, masses = params_to_elements(params, self.nplanet)
-        xjac, vjac = initialize_from_elements(elements, masses, self.t_start)
-
-        if WHsplit: # for H_Kepler defined in WH splitting (i.e. TTVFast)
-            ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
-        else: # total interior mass
-            ki = BIG_G * jnp.cumsum(masses)[1:]
-
-        return xv_to_elements(xjac, vjac, ki)
+    
