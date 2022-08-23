@@ -1,5 +1,5 @@
 __all__ = [
-    "initialize_jacobi_xv", "get_energy_map", "get_energy_diff", "geta_map",
+    "initialize_jacobi_xv", "get_energy_map", "get_energy_diff", #"geta_map",
     "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map"
 ]
 
@@ -81,33 +81,6 @@ def get_energy_diff(xva, masses):
     _xva = jnp.array([xva[0,:,:,:], xva[-1,:,:,:]])
     etot = get_energy_map(_xva[:,0,:,:], _xva[:,1,:,:], masses)
     return etot[1]/etot[0] - 1.
-
-@jit
-def get_acm(x, masses):
-    """ compute acceleration given position, velocity, mass
-
-        Args:
-            x: positions in CoM frame (Norbit, xyz)
-            masses: masses of the bodies (Nbody)
-
-        Returns:
-            a: accelerations (Norbit, xyz)
-
-    """
-    xjk = jnp.transpose(x[:,None] - x[None, :], axes=[0,2,1])
-    x2jk = jnp.sum(xjk * xjk, axis=1)[:,None,:]
-    x2jk = jnp.where(x2jk!=0., x2jk, jnp.inf)
-    x2jkinv = 1. / x2jk
-
-    x2jkinv1p5 = x2jkinv * jnp.sqrt(x2jkinv)
-    Xjk = - xjk * x2jkinv1p5
-
-    a = BIG_G * jnp.dot(Xjk, masses)
-
-    return a
-
-# map along the 1st axis of x
-geta_map = vmap(get_acm, (0,None), 0)
 
 
 def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
