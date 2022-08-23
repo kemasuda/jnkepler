@@ -1,85 +1,23 @@
-__all__ = ["JaxTTV", "elements_to_pdic", "params_to_elements"]
+__all__ = ["JaxTTV"]
 
 #%%
 import numpy as np
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from functools import partial
-from .utils import get_ediff, get_energy_vmap, initialize_from_elements, xv_to_elements, BIG_G
-from .hermite4 import integrate_elements, find_transit_times_planets, find_transit_times_nodata, findidx_map
-from .symplectic import get_ttvs as jttvfast
+from .utils import *
+from .conversion import *
+from .findtransit import *
+from .symplectic import integrate_xv
+from .hermite4 import integrate_xv as integrate_xv_hermite4
 from jax import jit, grad
-
-#%%
 from jax.config import config
 config.update('jax_enable_x64', True)
 
 #%%
-M_earth = 3.0034893e-6
-def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
-    """ convert JaxTTV elements/masses into dictionary
-
-        Args:
-            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
-            masses: masses of the bodies (Nbody,)
-            outkeys: if specified only include these keys in the output
-            force_coplanar: if True, set incl=pi/2 and lnode=0
-
-        Returns:
-            dicionary of the parameters
-
-    """
-    npl = len(masses) - 1
-    pdic = {}
-    pdic['pmass'] = masses[1:] / M_earth
-    pdic['period'] = jnp.array([elements[j][0] for j in range(npl)])
-    pdic['ecosw'] = jnp.array([elements[j][1] for j in range(npl)])
-    pdic['esinw'] = jnp.array([elements[j][2] for j in range(npl)])
-    if force_coplanar:
-        copl = 0.
-    else:
-        copl = 1.
-    pdic['cosi'] = jnp.array([elements[j][3]*copl for j in range(npl)])
-    pdic['lnode'] = jnp.array([elements[j][4]*copl for j in range(npl)])
-    pdic['tic'] = jnp.array([elements[j][5] for j in range(npl)])
-    pdic['ecc'] = jnp.sqrt(pdic['ecosw']**2 + pdic['esinw']**2)
-    pdic['omega'] = jnp.arctan2(pdic['esinw'], pdic['ecosw'])
-    pdic['lnmass'] = jnp.log(masses[1:])
-    pdic['mass'] = masses[1:]
-
-    pdic['ecc'] = jnp.sqrt(pdic['ecosw']**2 + pdic['esinw']**2)
-    pdic['cosw'] = pdic['ecosw'] / jnp.fmax(pdic['ecc'], 1e-2)
-    pdic['sinw'] = pdic['esinw'] / jnp.fmax(pdic['ecc'], 1e-2)
-
-    if outkeys is None:
-        return pdic
-
-    for key in list(pdic.keys()):
-        if key not in outkeys:
-            pdic.pop(key)
-
-    return pdic
-
-def params_to_elements(params, npl):
-    """ convert JaxTTV parameter array into element and mass arrays
-
-        Args:
-            params: JaxTTV parameter array
-            npl: number of orbits (planets)
-
-        Returns:
-            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
-            masses: masses of the bodies (Nbody,)
-
-    """
-    elements = jnp.array(params[:-npl].reshape(npl, -1))
-    masses = jnp.exp(jnp.hstack([[0], params[-npl:]]))
-    return elements, masses
-
-#%%
 class JaxTTV:
     """ main class """
-    def __init__(self, t_start, t_end, dt, symplectic=True):
+    def __init__(self, t_start, t_end, dt):
         """ initialization
 
             Args:
@@ -93,11 +31,6 @@ class JaxTTV:
         self.t_end = t_end
         self.dt = dt
         self.times = jnp.arange(t_start, t_end, dt)
-        self.symplectic = symplectic
-        if symplectic:
-            print ("# sympletic integrator is used.")
-        else:
-            print ("# hermite integrator is used.")
 
     def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
         """ set observed transit times
@@ -168,8 +101,9 @@ class JaxTTV:
             p_new.append(pfit)
         return np.array(t0fit), np.array(p_new)
 
+    """
     def integrate(self, elements, masses, t_start, t_end, dt):
-        """ integrate the orbits using Hermite integrator
+        integrate the orbits using Hermite integrator
 
             Args:
                 elements: orbital elements in JaxTTV format
@@ -184,14 +118,14 @@ class JaxTTV:
                     shape = (time, x or v or a, orbit, cartesian component)
                 energy: total energy at each time
 
-        """
         times = jnp.arange(t_start, t_end, dt)
         t, xva = integrate_elements(elements, masses, times, t_start)
         energy = get_energy_vmap(xva[:,0,:,:], xva[:,1,:,:], masses)
         return t, xva, energy
+    """
 
     @partial(jit, static_argnums=(0,))
-    def get_ttvs(self, elements, masses):
+    def get_ttvs(self, elements, masses, nitr_kepler=3, nitr_transit=5):
         """ compute model transit times (jitted version)
         Returns only transit times that are closest to the observed times.
 
@@ -204,16 +138,17 @@ class JaxTTV:
                 fractional energy change
 
         """
-        if self.symplectic:
-            return jttvfast(self, elements, masses)
-        else:
-            t, xva = integrate_elements(elements, masses, self.times, self.t_start)
-            de_frac = get_ediff(xva, masses)
-            return find_transit_times_planets(t, xva, self.tcobs, masses), de_frac
+        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start)
+        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr_kepler=nitr_kepler)
+        xcm, vcm, acm = xvjac_to_xvacm(xvjac, masses)
+        etot = get_energy_map(xcm, vcm, masses)
+        transit_times = find_transit_times_planets(times, xcm, vcm, acm, self.tcobs, masses, nitr_transit=nitr_transit)
+        return transit_times, etot[-1]/etot[0]-1.
 
-    def get_ttvs_nojit(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False, nitr=5):
+    def get_ttvs_nojit(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,
+        nitr_transit=5):
         """ compute model transit times w/o jit
-        Unlike the jitted version, this function returns all the transit times between t_start and t_end for each planet.
+        Unlike the jitted version, this function returns all the transit times between t_start and t_end for each planet. Here Hermite4 integration is used (but this is not necessary).
 
             Args:
                 elements: orbital elements in JaxTTV format
@@ -233,13 +168,16 @@ class JaxTTV:
             times, t0 = jnp.arange(t_start, t_end, dt), t_start
         else:
             times, t0 = self.times, self.t_start
-        t, xva = integrate_elements(elements, masses, times, t0)
-        de_frac = get_ediff(xva, masses)
+
+        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, t0)
+        xast0, vast0 = jacobi_to_astrocentric(xjac0, vjac0, masses)
+        xcm, vcm = astrocentric_to_cm(xast0, vast0, masses)
+        t, xva = integrate_xv_hermite4(xcm, vcm, masses, times)
+        de_frac = get_energy_diff(xva, masses)
 
         tcarr = []
         for pidx in range(1, len(masses)):
-            tc = find_transit_times_nodata(t, xva[:,0,:,:], xva[:,1,:,:], xva[:,2,:,:], pidx, masses, nitr=nitr)
-            #tc = find_transit_times_nodata(t, xva, pidx, masses)
+            tc = find_transit_times_nodata(t, xva[:,0,:,:], xva[:,1,:,:], xva[:,2,:,:], pidx, masses, nitr=nitr_transit)
             tcarr.append(tc)
         if flatten:
             tcarr = np.hstack(tcarr)
@@ -324,25 +262,25 @@ class JaxTTV:
             ax[1].plot(x0, np.exp(-0.5*x0**2/sd**2)/np.sqrt(2*np.pi)/sd, lw=1, color='C0', ls='dashed', label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]))
             ax[1].legend(loc='lower right')
 
-    def check_prec(self, params, dtfrac=1e-3, nitr=10):
+    def check_prec(self, params, dtfrac=1e-3, nitr_transit=10):
         """ compare get_ttvs outputs with those from get_ttvs_nojit with small timestep
         to check the precision of the former
 
             Args:
                 params: JaxTTV parameter array
-                dtfrac: self.dt*dtfrac is used for the comparison integration
+                dtfrac: (innermost period) * dtfrac is used for the comparison integration
 
             Returns:
                 model transit times from get_ttvs
 
         """
-        tc, de = self.get_ttvs(*params_to_elements(params, self.nplanet))
+        elements, masses = params_to_elements(params, self.nplanet)
+        tc, de = self.get_ttvs(elements, masses)
         print ("# fractional energy error (symplectic, dt=%.2e): %.2e" % (self.dt,de))
 
-        elements, masses = params_to_elements(params, self.nplanet)
         dtcheck = self.p_init[0] * dtfrac
         tc2, de2 = self.get_ttvs_nojit(elements, masses, t_start=self.t_start, t_end=self.t_end, dt=dtcheck,
-                                       flatten=True, nitr=nitr)
+                                       flatten=True, nitr_transit=nitr_transit)
         tc2 = tc2[np.array(findidx_map(tc2, tc))]
         print ("# fractional energy error (Hermite, dt=%.2e): %.2e" % (dtcheck, de2))
         maxdiff = np.max(np.abs(tc-tc2))
@@ -415,5 +353,3 @@ class JaxTTV:
             self.quicklook(getmodel(pfinal), save=save)
 
         return pfinal
-
-    

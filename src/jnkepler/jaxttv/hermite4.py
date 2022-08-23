@@ -1,12 +1,15 @@
 """ 4th-order Hermite integrator based on Kokubo, E., & Makino, J. 2004, PASJ, 56, 861
 used for transit time computation
 """
+__all__ = [
+    "hermite4_step_map", "integrate_xv",
+]
 
 #%%
 import jax.numpy as jnp
 from jax import jit, vmap, grad
 from jax.lax import scan
-from .utils import *
+from .utils import BIG_G
 from jax.config import config
 config.update('jax_enable_x64', True)
 
@@ -101,7 +104,8 @@ def hermite4_step(x, v, masses, dt):
     xc, vc = correct(xp, vp, a1, dota1, a, dota, dt)
     return xc, vc, a1
 
-hermite4_step_vmap = jit(vmap(hermite4_step, (0,0,None,0), 2)) # xva, body idx, xyz, transit idx
+# map along the 1st axes of x, v, dt (Ntransits)
+hermite4_step_map = jit(vmap(hermite4_step, (0,0,None,0), 2)) # xva, body idx, xyz, transit idx
 
 
 def integrate_xv(x, v, masses, times):

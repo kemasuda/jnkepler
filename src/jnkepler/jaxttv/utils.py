@@ -1,4 +1,8 @@
-#%%
+__all__ = [
+    "initialize_jacobi_xv", "get_energy_map", "get_energy_diff", "geta_map",
+    "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map"
+]
+
 import jax.numpy as jnp
 from jax import jit, vmap
 from jax.lax import scan
@@ -8,9 +12,10 @@ config.update('jax_enable_x64', True)
 
 #%%
 BIG_G = 2.959122082855911e-4
+M_earth = 3.0034893e-6
 
 
-def initialize_from_elements(elements, masses, t_epoch):
+def initialize_jacobi_xv(elements, masses, t_epoch):
     """ compute initial position/velocity from JaxTTV elements
         here the elements are interpreted as Jacobi using the total interior mass (see Rein & Tamayo 2015)
 
@@ -32,7 +37,7 @@ def initialize_from_elements(elements, masses, t_epoch):
         inc = jnp.arccos(cosi)
 
         u = tic_to_u(tic, porb, ecc, omega, t_epoch)
-        xj, vj = elements_to_xvrel(porb, ecc, inc, omega, lnode, u, BIG_G*jnp.sum(masses[:j+2]))
+        xj, vj = elements_to_xv(porb, ecc, inc, omega, lnode, u, BIG_G*jnp.sum(masses[:j+2]))
         xjac.append(xj)
         vjac.append(vj)
 
@@ -57,10 +62,11 @@ def get_energy(x, v, masses):
     U = -BIG_G * jnp.sum(M * jnp.tril(1./jnp.sqrt(jnp.sum(X*X, axis=2)), k=-1))
     return K + U
 
-get_energy_vmap = jit(vmap(get_energy, (0,0,None), 0))
+# map along the 1st axes of x and v (Nstep)
+get_energy_map = jit(vmap(get_energy, (0,0,None), 0))
 
 @jit
-def get_ediff(xva, masses):
+def get_energy_diff(xva, masses):
     """ compute fractional energy change given integration result
 
         Args:
@@ -103,8 +109,69 @@ def get_acm(x, masses):
 geta_map = vmap(get_acm, (0,None), 0)
 
 
-def get_elements(params, nplanet, t_epoch, WHsplit=False):
-    """ convert JaxTTV parameter array into more normal sets of parameters
+def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
+    """ convert JaxTTV elements/masses into dictionary
+
+        Args:
+            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
+            masses: masses of the bodies (Nbody,)
+            outkeys: if specified only include these keys in the output
+            force_coplanar: if True, set incl=pi/2 and lnode=0
+
+        Returns:
+            dicionary of the parameters
+
+    """
+    npl = len(masses) - 1
+    pdic = {}
+    pdic['pmass'] = masses[1:] / M_earth
+    pdic['period'] = jnp.array([elements[j][0] for j in range(npl)])
+    pdic['ecosw'] = jnp.array([elements[j][1] for j in range(npl)])
+    pdic['esinw'] = jnp.array([elements[j][2] for j in range(npl)])
+    if force_coplanar:
+        copl = 0.
+    else:
+        copl = 1.
+    pdic['cosi'] = jnp.array([elements[j][3]*copl for j in range(npl)])
+    pdic['lnode'] = jnp.array([elements[j][4]*copl for j in range(npl)])
+    pdic['tic'] = jnp.array([elements[j][5] for j in range(npl)])
+    pdic['ecc'] = jnp.sqrt(pdic['ecosw']**2 + pdic['esinw']**2)
+    pdic['omega'] = jnp.arctan2(pdic['esinw'], pdic['ecosw'])
+    pdic['lnmass'] = jnp.log(masses[1:])
+    pdic['mass'] = masses[1:]
+
+    pdic['ecc'] = jnp.sqrt(pdic['ecosw']**2 + pdic['esinw']**2)
+    pdic['cosw'] = pdic['ecosw'] / jnp.fmax(pdic['ecc'], 1e-2)
+    pdic['sinw'] = pdic['esinw'] / jnp.fmax(pdic['ecc'], 1e-2)
+
+    if outkeys is None:
+        return pdic
+
+    for key in list(pdic.keys()):
+        if key not in outkeys:
+            pdic.pop(key)
+
+    return pdic
+
+def params_to_elements(params, npl):
+    """ convert JaxTTV parameter array into element and mass arrays
+
+        Args:
+            params: JaxTTV parameter array
+            npl: number of orbits (planets)
+
+        Returns:
+            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
+            masses: masses of the bodies (Nbody,)
+
+    """
+    elements = jnp.array(params[:-npl].reshape(npl, -1))
+    masses = jnp.exp(jnp.hstack([[0], params[-npl:]]))
+    return elements, masses
+
+
+def convert_elements(elements, masses, t_epoch, WHsplit=False):
+    """ convert JaxTTV elements into more normal sets of parameters
 
         Args:
             params: JAX TTV parameter array
@@ -118,7 +185,7 @@ def get_elements(params, nplanet, t_epoch, WHsplit=False):
             angles are in radians
 
     """
-    elements, masses = params_to_elements(params, nplanet)
+    #elements, masses = params_to_elements(params, nplanet)
     xjac, vjac = initialize_from_elements(elements, masses, t_start)
 
     if WHsplit:
@@ -128,7 +195,7 @@ def get_elements(params, nplanet, t_epoch, WHsplit=False):
         # total interior mass
         ki = BIG_G * jnp.cumsum(masses)[1:]
 
-    return xv_to_elements(xjac, vjac, ki)
+    return xv_to_elements(xjac, vjac, ki), masses
 
 
 def findidx_map(arr1, arr2):
@@ -136,7 +203,7 @@ def findidx_map(arr1, arr2):
 
         Args:
             arr1: array from which elements are picked up
-            arr2: array of the values for which nearest matches are searched 
+            arr2: array of the values for which nearest matches are searched
 
         Returns:
             indices of arr1 nearest to each element in arr2

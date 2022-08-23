@@ -1,11 +1,16 @@
 """ symplectic integrator
 much borrowed from TTVFast https://github.com/kdeck/TTVFast
 """
+__all__ = [
+    #"dEstep", "kepler_step", "Hint", "Hintgrad", "nbody_kicks",
+    "integrate_xv"
+]
 
 import jax.numpy as jnp
 from jax import jit, vmap, grad
 from jax.lax import scan
-from .utils import *
+from .utils import BIG_G
+from .conversion import jacobi_to_astrocentric
 from jax.config import config
 config.update('jax_enable_x64', True)
 
@@ -112,6 +117,7 @@ def Hint(x, v, masses):
 
 gHint = grad(Hint)
 
+
 def Hintgrad(x, v, masses):
     """ gradient of the interaction Hamiltonian
     times (star mass / planet mass)
@@ -128,8 +134,7 @@ def Hintgrad(x, v, masses):
     """
     return gHint(x, v, masses) * (masses[0] / masses[1:])[:,None]
 
-#%%
-#@jit
+
 def nbody_kicks(x, v, ki, masses, dt):
     """ apply N-body kicks to velocities
 
@@ -148,9 +153,9 @@ def nbody_kicks(x, v, ki, masses, dt):
     dv = - ki[:, None] * dt * Hintgrad(x, v, masses)
     return x, v+dv
 
-#@jit
+"""
 def symplectic_step(x, v, ki, masses, dt):
-    """ advance the system by a single symplectic step
+    advance the system by a single symplectic step
     (0.5dt kepler) -> (velocity kick) -> (0.5dt kepler again)
 
         Args:
@@ -164,15 +169,14 @@ def symplectic_step(x, v, ki, masses, dt):
             new positions
             new velocities
 
-    """
     dt2 = 0.5 * dt
     x, v = kepler_step(x, v, ki, dt2)
     x, v = nbody_kicks(x, v, ki, masses, dt)
     xout, vout = kepler_step(x, v, ki, dt2)
     return xout, vout
+"""
 
-#@jit
-def integrate_xv(x, v, masses, times):
+def integrate_xv(x, v, masses, times, nitr_kepler=3):
     """ symplectic integration of the orbits
 
         Args:
@@ -196,14 +200,15 @@ def integrate_xv(x, v, masses, times):
     def step(xvin, dt):
         x, v = xvin
         dt2 = 0.5 * dt
-        x, v = kepler_step(x, v, ki, dt2)
+        x, v = kepler_step(x, v, ki, dt2, nitr=nitr_kepler)
         x, v = nbody_kicks(x, v, ki, masses, dt)
-        xout, vout = kepler_step(x, v, ki, dt2)
+        xout, vout = kepler_step(x, v, ki, dt2, nitr=nitr_kepler)
         return [xout, vout], jnp.array([xout, vout])
 
     _, xv = scan(step, [x, v], dtarr)
 
     return times[1:], xv
+
 
 def compute_corrector_coefficientsTO():
     """ coefficients for the third-order corrector """
@@ -214,6 +219,7 @@ def compute_corrector_coefficientsTO():
     TOb1, TOb2 = -0.5 * corr_beta, 0.5 * corr_beta
 
     return TOa1, TOa2, TOb1, TOb2
+
 
 def corrector_step(x, v, ki, masses, a, b):
     """ corrector step
@@ -233,6 +239,7 @@ def corrector_step(x, v, ki, masses, a, b):
     _x, _v = nbody_kicks(_x, _v, ki, masses, b)
     _x, _v = kepler_step(_x, _v, ki, a)
     return _x, _v
+
 
 def real_to_mapTO(x, v, ki, masses, dt):
     """ transformation between real and mapping coordinates
