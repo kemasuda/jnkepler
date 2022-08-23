@@ -9,7 +9,7 @@ __all__ = [
 import jax.numpy as jnp
 from jax import jit, vmap, grad
 from jax.lax import scan
-from .utils import BIG_G
+from .conversion import BIG_G
 from jax.config import config
 config.update('jax_enable_x64', True)
 

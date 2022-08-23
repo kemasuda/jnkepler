@@ -1,5 +1,5 @@
 __all__ = [
-    "initialize_jacobi_xv", "get_energy_map", "get_energy_diff", #"geta_map",
+    "initialize_jacobi_xv", "get_energy_map", "get_energy_diff",
     "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map"
 ]
 
@@ -7,12 +7,11 @@ import jax.numpy as jnp
 from jax import jit, vmap
 from jax.lax import scan
 from .markley import get_E
-from .conversion import tic_to_u, elements_to_xv
+from .conversion import tic_to_u, elements_to_xv, xv_to_elements, BIG_G
 from jax.config import config
 config.update('jax_enable_x64', True)
 
 #%%
-BIG_G = 2.959122082855911e-4
 M_earth = 3.0034893e-6
 
 
@@ -31,14 +30,13 @@ def initialize_jacobi_xv(elements, masses, t_epoch):
     """
     xjac, vjac = [], []
     for j in range(len(elements)):
-        #porb, ecc, inc, omega, lnode, tic = elements[j]
         porb, ecosw, esinw, cosi, lnode, tic = elements[j]
         ecc = jnp.sqrt(ecosw**2 + esinw**2)
         omega = jnp.arctan2(esinw, ecosw)
         inc = jnp.arccos(cosi)
 
         u = tic_to_u(tic, porb, ecc, omega, t_epoch)
-        xj, vj = elements_to_xv(porb, ecc, inc, omega, lnode, u, BIG_G*jnp.sum(masses[:j+2]))
+        xj, vj = elements_to_xv(porb, ecc, inc, omega, lnode, u, jnp.sum(masses[:j+2]))
         xjac.append(xj)
         vjac.append(vj)
 
@@ -127,6 +125,7 @@ def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
 
     return pdic
 
+
 def params_to_elements(params, npl):
     """ convert JaxTTV parameter array into element and mass arrays
 
@@ -159,7 +158,7 @@ def convert_elements(elements, masses, t_epoch, WHsplit=False):
             angles are in radians
 
     """
-    xjac, vjac = initialize_jacobi_xv(elements, masses, t_start)
+    xjac, vjac = initialize_jacobi_xv(elements, masses, t_epoch)
 
     if WHsplit:
         # for H_Kepler defined in WH splitting (i.e. TTVFast)

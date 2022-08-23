@@ -2,19 +2,17 @@
 much borrowed from TTVFast https://github.com/kdeck/TTVFast
 """
 __all__ = [
-    #"dEstep", "kepler_step", "Hint", "Hintgrad", "nbody_kicks",
     "integrate_xv"
 ]
 
 import jax.numpy as jnp
 from jax import jit, vmap, grad
 from jax.lax import scan
-from .utils import BIG_G
-from .conversion import jacobi_to_astrocentric
+from .conversion import jacobi_to_astrocentric, BIG_G
 from jax.config import config
 config.update('jax_enable_x64', True)
 
-#%%
+
 def dEstep(x, ecosE0, esinE0, dM):
     """ single step to solve incremental Kepler's equation to obtain delta(eccentric anomaly)
 
@@ -41,8 +39,7 @@ def dEstep(x, ecosE0, esinE0, dM):
     dx = -f/(fp + dx*(fpp + dx*fppp))
     return x + dx
 
-#%%
-#@jit
+
 def kepler_step(x, v, gm, dt, nitr=3):
     """ Kepler step
 
@@ -83,6 +80,7 @@ def kepler_step(x, v, gm, dt, nitr=3):
     v_new = fdot[:,None] * x + gdot[:,None] * v
 
     return x_new, v_new
+
 
 def Hint(x, v, masses):
     """ interaction Hamiltonian devided by Gm_0m_0
@@ -176,7 +174,7 @@ def symplectic_step(x, v, ki, masses, dt):
     return xout, vout
 """
 
-def integrate_xv(x, v, masses, times, nitr_kepler=3):
+def integrate_xv(x, v, masses, times, nitr=3):
     """ symplectic integration of the orbits
 
         Args:
@@ -200,9 +198,9 @@ def integrate_xv(x, v, masses, times, nitr_kepler=3):
     def step(xvin, dt):
         x, v = xvin
         dt2 = 0.5 * dt
-        x, v = kepler_step(x, v, ki, dt2, nitr=nitr_kepler)
+        x, v = kepler_step(x, v, ki, dt2, nitr=nitr)
         x, v = nbody_kicks(x, v, ki, masses, dt)
-        xout, vout = kepler_step(x, v, ki, dt2, nitr=nitr_kepler)
+        xout, vout = kepler_step(x, v, ki, dt2, nitr=nitr)
         return [xout, vout], jnp.array([xout, vout])
 
     _, xv = scan(step, [x, v], dtarr)

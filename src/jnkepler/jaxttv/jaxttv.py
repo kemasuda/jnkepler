@@ -139,10 +139,10 @@ class JaxTTV:
 
         """
         xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start)
-        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr_kepler=nitr_kepler)
+        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=nitr_kepler)
         xcm, vcm, acm = xvjac_to_xvacm(xvjac, masses)
         etot = get_energy_map(xcm, vcm, masses)
-        transit_times = find_transit_times_planets(times, xcm, vcm, acm, self.tcobs, masses, nitr_transit=nitr_transit)
+        transit_times = find_transit_times_planets(times, xcm, vcm, acm, self.tcobs, masses, nitr=nitr_transit)
         return transit_times, etot[-1]/etot[0]-1.
 
     def get_ttvs_nojit(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,
