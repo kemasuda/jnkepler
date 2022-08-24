@@ -1,8 +1,7 @@
 """ routines for finding transit times
 """
 __all__ = [
-    "find_transit_times_nodata", "find_transit_times", "find_transit_times_planets",
-    "find_transit_times_all"
+    "find_transit_times_single", "find_transit_times_all"
 ]
 
 #%%
@@ -35,7 +34,7 @@ def get_gderivs(xastj, vastj, aastj):
     return gj, dotgj
 
 
-def find_transit_times_nodata(t, x, v, a, j, masses, nitr=5):
+def find_transit_times_single(t, x, v, a, j, masses, nitr=5):
     """ find transit times (cannot be jitted)
 
         Args:
@@ -74,84 +73,7 @@ def find_transit_times_nodata(t, x, v, a, j, masses, nitr=5):
     return tc
 
 
-def find_transit_times(t, x, v, a, j, tcobs, masses, nitr=5):
-    """ find transit times (jit version)
-    This requires tcobs, since the routine finds only transit times nearest to the observed ones.
-
-        Args:
-            t: times (Nstep,)
-            x: positions in CoM frame (Nstep, Norbit, xyz)
-            v: velocities in CoM frame (Nstep, Norbit, xyz)
-            a: accelerations in CoM frame (Nstep, Norbit, xyz)
-            j: index of the orbit (planet) for each transit times are computed
-            tcobs: observed transit times for jth orbit (planet)
-            masses: masses of the bodies (Nbody,), solar unit
-            niter: number of Newton-Raphson iterations
-
-        Returns:
-            transit times for the jth orbit (planet)
-            nearest to  the observed ones
-
-    """
-    xastj, vastj, aastj = cm_to_astrocentric(x, v, a, j)
-    gj, dotgj = get_gderivs(xastj, vastj, aastj)
-
-    # get t, x, v where tcidx=True; difficult to make this compatible with jit
-    # should be improved
-    tcidx = (gj[1:] * gj[:-1] < 0) & (xastj[1:,2] > 0) & (dotgj[1:] > 0)
-    _tc = jnp.where(tcidx, t[1:], -jnp.inf)
-    idxsort = jnp.argsort(_tc)
-    _tcsort = _tc[idxsort]
-    tcidx1 = jnp.searchsorted(_tcsort, tcobs)
-    tcidx2 = tcidx1 - 1
-    tc1, tc2 = _tcsort[tcidx1], _tcsort[tcidx2]
-    tcidx = jnp.where(jnp.abs(tcobs-tc1) < jnp.abs(tcobs-tc2), tcidx1, tcidx2)
-    tc = _tcsort[tcidx]
-
-    nrstep = - (gj / dotgj)[1:][idxsort][tcidx]
-    xtc = x[1:,:,:][idxsort][tcidx]
-    vtc = v[1:,:,:][idxsort][tcidx]
-
-    def tcstep(xvs, i):
-        xin, vin, step = xvs
-        xtc, vtc, atc = hermite4_step_map(xin, vin, masses, step)
-        xtc = jnp.transpose(xtc, axes=[2,0,1])
-        vtc = jnp.transpose(vtc, axes=[2,0,1])
-        atc = jnp.transpose(atc, axes=[2,0,1])
-        _xastj, _vastj, _aastj = cm_to_astrocentric(xtc, vtc, atc, j)
-        _gj, _dotgj = get_gderivs(_xastj, _vastj, _aastj)
-        step = - _gj / _dotgj
-        return [xtc, vtc, step], step
-
-    _, steps = scan(tcstep, [xtc, vtc, nrstep], jnp.arange(nitr))
-    tc += nrstep + jnp.sum(steps, axis=0)
-
-    return tc
-
-
-def find_transit_times_planets(t, x, v, a, tcobs, masses, nitr=5):
-    """ find transit times: loop over each planet (should be modified)
-
-        Args:
-            t: times
-            x: positions in CoM frame (Nstep, Norbit, xyz)
-            v: velocities in CoM frame (Nstep, Norbit, xyz)
-            a: accelerations in CoM frame (Nstep, Norbit, xyz)
-            tcobs: list of observed transit times
-            masses: masses of the bodies (in units of solar mass)
-
-        Returns:
-            model transit times (1D flattened array)
-
-    """
-    tcarr = jnp.array([])
-    for j in range(len(masses)-1):
-        tc = find_transit_times(t, x, v, a, j+1, tcobs[j], masses, nitr=nitr)
-        tcarr = jnp.hstack([tcarr, tc])
-    return tcarr
-
-
-# new algorithm
+""" new algorithm w/o for loop """
 def get_tcflag(t, xjac, vjac):
     """ find times just after the transit centers using *Jacobi* coordinates
 
@@ -216,8 +138,6 @@ def get_nrstep(x, v, a, j):
 get_nrstep_map = vmap(get_nrstep, (0,0,0,0), 0)
 
 
-#@partial(jit, static_argnums=(0,))
-#def find_transit_times_all(self, t, xvjac, masses, nitr=5):
 def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
     """ find transit times for all planets
 
@@ -234,9 +154,6 @@ def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
             total energies around transit times
 
     """
-    #pidxarr = self.pidx.astype(int) - 1
-    #tcobsarr = self.tcobs_flatten
-
     xjac, vjac = xvjac[:,0,:,:], xvjac[:,1,:,:]
     tcflag = get_tcflag(t, xjac, vjac)
     tcidx = find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
@@ -261,3 +178,83 @@ def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
     etot = get_energy_map(xcm_init, vcm_init, masses) # total energies around transit times
 
     return tc, etot
+
+
+""" algorithm w/ for loop """
+'''
+def find_transit_times(t, x, v, a, j, tcobs, masses, nitr=5):
+    """ find transit times (jit version)
+    This requires tcobs, since the routine finds only transit times nearest to the observed ones.
+
+        Args:
+            t: times (Nstep,)
+            x: positions in CoM frame (Nstep, Norbit, xyz)
+            v: velocities in CoM frame (Nstep, Norbit, xyz)
+            a: accelerations in CoM frame (Nstep, Norbit, xyz)
+            j: index of the orbit (planet) for each transit times are computed
+            tcobs: observed transit times for jth orbit (planet)
+            masses: masses of the bodies (Nbody,), solar unit
+            niter: number of Newton-Raphson iterations
+
+        Returns:
+            transit times for the jth orbit (planet)
+            nearest to the observed ones
+
+    """
+    xastj, vastj, aastj = cm_to_astrocentric(x, v, a, j)
+    gj, dotgj = get_gderivs(xastj, vastj, aastj)
+
+    # get t, x, v where tcidx=True; difficult to make this compatible with jit
+    # should be improved
+    tcidx = (gj[1:] * gj[:-1] < 0) & (xastj[1:,2] > 0) & (dotgj[1:] > 0)
+    _tc = jnp.where(tcidx, t[1:], -jnp.inf)
+    idxsort = jnp.argsort(_tc)
+    _tcsort = _tc[idxsort]
+    tcidx1 = jnp.searchsorted(_tcsort, tcobs)
+    tcidx2 = tcidx1 - 1
+    tc1, tc2 = _tcsort[tcidx1], _tcsort[tcidx2]
+    tcidx = jnp.where(jnp.abs(tcobs-tc1) < jnp.abs(tcobs-tc2), tcidx1, tcidx2)
+    tc = _tcsort[tcidx]
+
+    nrstep = - (gj / dotgj)[1:][idxsort][tcidx]
+    xtc = x[1:,:,:][idxsort][tcidx]
+    vtc = v[1:,:,:][idxsort][tcidx]
+
+    def tcstep(xvs, i):
+        xin, vin, step = xvs
+        xtc, vtc, atc = hermite4_step_map(xin, vin, masses, step)
+        xtc = jnp.transpose(xtc, axes=[2,0,1])
+        vtc = jnp.transpose(vtc, axes=[2,0,1])
+        atc = jnp.transpose(atc, axes=[2,0,1])
+        _xastj, _vastj, _aastj = cm_to_astrocentric(xtc, vtc, atc, j)
+        _gj, _dotgj = get_gderivs(_xastj, _vastj, _aastj)
+        step = - _gj / _dotgj
+        return [xtc, vtc, step], step
+
+    _, steps = scan(tcstep, [xtc, vtc, nrstep], jnp.arange(nitr))
+    tc += nrstep + jnp.sum(steps, axis=0)
+
+    return tc
+
+
+def find_transit_times_planets(t, x, v, a, tcobs, masses, nitr=5):
+    """ find transit times: loop over each planet (should be modified)
+
+        Args:
+            t: times
+            x: positions in CoM frame (Nstep, Norbit, xyz)
+            v: velocities in CoM frame (Nstep, Norbit, xyz)
+            a: accelerations in CoM frame (Nstep, Norbit, xyz)
+            tcobs: list of observed transit times
+            masses: masses of the bodies (in units of solar mass)
+
+        Returns:
+            model transit times (1D flattened array)
+
+    """
+    tcarr = jnp.array([])
+    for j in range(len(masses)-1):
+        tc = find_transit_times(t, x, v, a, j+1, tcobs[j], masses, nitr=nitr)
+        tcarr = jnp.hstack([tcarr, tc])
+    return tcarr
+'''

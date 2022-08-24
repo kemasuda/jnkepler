@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from functools import partial
 from .utils import *
 from .conversion import *
-from .findtransit import *
+from .findtransit import find_transit_times_single, find_transit_times_all
 from .symplectic import integrate_xv
 from .hermite4 import integrate_xv as integrate_xv_hermite4
 from jax import jit, grad
@@ -98,33 +98,11 @@ class JaxTTV:
             p_new.append(pfit)
         return np.array(t0fit), np.array(p_new)
 
-    """
-    def integrate(self, elements, masses, t_start, t_end, dt):
-        integrate the orbits using Hermite integrator
-
-            Args:
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
-                t_start: beginning of integration
-                t_end: end of integration
-                dt: integration time step (day)
-
-            Returns:
-                t: array of times
-                xva: position (x), velocity (v), acceleration (a)
-                    shape = (time, x or v or a, orbit, cartesian component)
-                energy: total energy at each time
-
-        times = jnp.arange(t_start, t_end, dt)
-        t, xva = integrate_elements(elements, masses, times, t_start)
-        energy = get_energy_vmap(xva[:,0,:,:], xva[:,1,:,:], masses)
-        return t, xva, energy
-    """
-
     @partial(jit, static_argnums=(0,))
     def get_ttvs(self, elements, masses, nitr_kepler=3, nitr_transit=5):
         """ compute model transit times (jitted version)
-        Returns only transit times that are closest to the observed times.
+        This function returns only transit times that are closest to the observed ones.
+        To get all the transit times, get_ttvs_nodata should be used instead.
 
             Args:
                 elements: orbital elements in JaxTTV format
@@ -137,18 +115,13 @@ class JaxTTV:
         """
         xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start)
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=nitr_kepler)
-        #xcm, vcm, acm = xvjac_to_xvacm(xvjac, masses)
-        #etot = get_energy_map(xcm, vcm, masses)
-        #transit_times = find_transit_times_planets(times, xcm, vcm, acm, self.tcobs, masses, nitr=nitr_transit)
-        #transit_times = find_transit_times_all(self.pidx.astype(int)-1, self.tcobs_flatten, times, xcm, vcm, acm, masses, nitr=nitr_transit)
         transit_times, etot = find_transit_times_all(self.pidx.astype(int)-1, self.tcobs_flatten, times, xvjac, masses, nitr=nitr_transit)
         return transit_times, etot[-1]/etot[0]-1.
 
     def get_ttvs_nodata(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,
-        nitr_transit=5):
+        nitr_transit=5, nitr_kepler=3, symplectic=True):
         """ compute all model transit times between t_start and t_end
-        This function is much slower than get_ttvs and should not be used for fitting
-        Now Hermite4 integration is used (but this is not necessary).
+        This function is slower than get_ttvs and should not be used for fitting.
 
             Args:
                 elements: orbital elements in JaxTTV format
@@ -157,7 +130,9 @@ class JaxTTV:
                 t_end: end of integration
                 dt: integration time step (day)
                 flatten: if True, the returned transit time array is flattened
-                nitr: # of iterations in transit-search loop
+                nitr_transit: # of iterations in transit-search loop
+                nitr_kepler: # of iterations in Kepler step (for symplectic only)
+                symplectic: if True use symplectic; otherwise Hermite4
 
             Returns:
                 list or 1D array (flatten=True) of model transit times
@@ -170,14 +145,21 @@ class JaxTTV:
             times, t0 = self.times, self.t_start
 
         xjac0, vjac0 = initialize_jacobi_xv(elements, masses, t0)
-        xast0, vast0 = jacobi_to_astrocentric(xjac0, vjac0, masses)
-        xcm, vcm = astrocentric_to_cm(xast0, vast0, masses)
-        t, xva = integrate_xv_hermite4(xcm, vcm, masses, times)
-        de_frac = get_energy_diff(xva, masses)
+        if symplectic:
+            t, xvjac = integrate_xv(xjac0, vjac0, masses, times, nitr=nitr_kepler)
+            xcm, vcm, acm = xvjac_to_xvacm(xvjac, masses)
+            etot = get_energy_map(xcm, vcm, masses)
+            de_frac = etot[-1] / etot[0] - 1.
+        else:
+            xast0, vast0 = jacobi_to_astrocentric(xjac0, vjac0, masses)
+            xcm, vcm = astrocentric_to_cm(xast0, vast0, masses)
+            t, xvacm = integrate_xv_hermite4(xcm, vcm, masses, times)
+            xcm, vcm, acm = xvacm[:,0,:,:], xvacm[:,1,:,:], xvacm[:,2,:,:]
+            de_frac = get_energy_diff(xvacm, masses)
 
         tcarr = []
         for pidx in range(1, len(masses)):
-            tc = find_transit_times_nodata(t, xva[:,0,:,:], xva[:,1,:,:], xva[:,2,:,:], pidx, masses, nitr=nitr_transit)
+            tc = find_transit_times_single(t, xcm, vcm, acm, pidx, masses, nitr=nitr_transit)
             tcarr.append(tc)
         if flatten:
             tcarr = np.hstack(tcarr)
@@ -255,15 +237,13 @@ class JaxTTV:
             ax[1].set_ylim(1e-3, ymax*1.5)
             ax[1].set_title("planet %d"%(j+1))
             ax[1].set_xlabel("residual / error")
-            #ymin, ymax = ax[1].get_ylim()
-            #ax[1].set_ylim(1e-4, ymax*1.5)
             ax[1].set_ylabel('frequency (normalized)')
             x0 = np.linspace(-5, 5, 100)
             ax[1].plot(x0, np.exp(-0.5*x0**2/sd**2)/np.sqrt(2*np.pi)/sd, lw=1, color='C0', ls='dashed', label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]))
             ax[1].legend(loc='lower right')
 
-    def check_prec(self, params, dtfrac=1e-3, nitr_transit=10):
-        """ compare get_ttvs outputs with those from get_ttvs_data with small timestep
+    def check_timing_precision(self, params, dtfrac=1e-3, nitr_transit=10, nitr_kepler=5, symplectic=False):
+        """ compare get_ttvs outputs with those from get_ttvs_nodata with a smaller timestep
         to check the precision of the former (may be obsolete)
 
             Args:
@@ -280,16 +260,29 @@ class JaxTTV:
 
         dtcheck = self.p_init[0] * dtfrac
         tc2, de2 = self.get_ttvs_nodata(elements, masses, t_start=self.t_start, t_end=self.t_end, dt=dtcheck,
-                                        flatten=True, nitr_transit=nitr_transit)
+                                        flatten=True, nitr_transit=nitr_transit, nitr_kepler=nitr_kepler, symplectic=symplectic)
+        intname = 'symplectic' if symplectic else 'Hermite4'
         tc2 = tc2[np.array(findidx_map(tc2, tc))]
-        print ("# fractional energy error (Hermite, dt=%.2e): %.2e" % (dtcheck, de2))
+        print ("# fractional energy error (%s, dt=%.2e): %.2e" % (intname, dtcheck, de2))
         maxdiff = np.max(np.abs(tc-tc2))
         print ("# max difference in tc: %.2e days (%.2f sec)"%(maxdiff, maxdiff*86400))
 
-        return tc
+        return tc, tc2
 
     def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False):
-        """ find maximum-likelihood parameters
+        """ find maximum-likelihood parameters using scipy.optimize.curve_fit
+        Could write a more elaborate function separately.
+
+            Args:
+                dp, dtic: search widths for periods and times of inferior conjunction
+                emax: maximum allowed eccentricity
+                mmin, mmax: minimum and maximum planet masses (in units of solar mass)
+                cosilim, olim: bounds for cos(incliantion) and londitude of ascending node (radian)
+                amoeba: if True, Nelder-Mead optimization is used
+                plot: if True, show quicklook plots
+                save: name of the plots to be saved (if not None)
+                pinit: initial parameter array can be specified (if not None)
+                jacrev: if True, jacobian from jax.grad is used for curve_fit
 
             Returns:
                 set of parameters (JaxTTV format)
@@ -322,7 +315,7 @@ class JaxTTV:
 
         if jacrev and (not amoeba):
             from jax import jit, jacrev
-            _jacfunc = jit(jacrev(getmodel)) # it takes long to compile...
+            _jacfunc = jit(jacrev(getmodel)) # it may take long to compile...
             def jacfunc(x, *params):
                 return _jacfunc(jnp.array(params))
             jac = jacfunc
