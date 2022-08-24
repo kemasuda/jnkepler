@@ -4,3 +4,4 @@ include src/jnkepler/data/kep51_dt1.0_start155.00_end2950.00_params.txt
 include src/jnkepler/data/kep51_dt1.0_start155.00_end2950.00_pdict_ttvfast.csv
 include src/jnkepler/data/kep51_dt1.0_start155.00_end2950.00_pdict.csv
 include src/jnkepler/data/kep51_dt1.0_start155.00_end2950.00_tc.csv
+include src/jnkepler/data/kep51_dt1.0_start155.00_end2950.00_grad.txt
