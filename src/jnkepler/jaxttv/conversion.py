@@ -264,7 +264,7 @@ def xvjac_to_xvacm(xv, masses):
     return xcm, vcm, acm
 
 
-def xvjac_to_xvcm(xv, masses):
+def xvjac_to_xvcm(x, v, masses):
     """ Conversion from Jacobi to center-of-mass
     xv is assumed to be the result of integration: 1st axis is for the times.
 
@@ -278,6 +278,6 @@ def xvjac_to_xvcm(xv, masses):
             accelerations in the CoM frame
 
     """
-    xa, va = jacobi_to_astrocentric(xv[:,0,:], xv[:,1,:], masses)
+    xa, va = jacobi_to_astrocentric(x, v, masses)
     xcm, vcm = a2cm_map(xa, va, masses)
     return xcm, vcm

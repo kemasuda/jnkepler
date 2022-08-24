@@ -9,9 +9,10 @@ __all__ = [
 import jax.numpy as jnp
 from jax import jit, vmap, grad
 from jax.lax import scan
-from .conversion import cm_to_astrocentric
+from functools import partial
+from .conversion import cm_to_astrocentric, xvjac_to_xvacm
 from .hermite4 import hermite4_step_map
-from .utils import findidx_map
+from .utils import findidx_map, get_energy_map
 from jax.config import config
 config.update('jax_enable_x64', True)
 
@@ -127,27 +128,6 @@ def find_transit_times(t, x, v, a, j, tcobs, masses, nitr=5):
 
     return tc
 
-""" corresponds to integrate_elemetns in hermite4
-def find_transit_times_planets(t, xva, tcobs, masses):
-        find transit times for every planet (should make this part mappable to eliminate for loop?)
-
-        Args:
-            t: times
-            xva: position, velocity, acceleration (Nstep, xva, Norbit, xyz)
-            tcobs: observed transit times, list(!) of length Norbit
-            masses: masses of the bodies
-
-        Returns:
-            N-body transit times (1D array)
-
-
-    tcarr = jnp.array([])
-    for j in range(1,len(masses)):
-        tc = find_transit_times(t, xva[:,0,:,:], xva[:,1,:,:], xva[:,2,:,:], j, tcobs[j-1], masses)
-        tcarr = jnp.hstack([tcarr, tc])
-    return tcarr
-"""
-
 
 def find_transit_times_planets(t, x, v, a, tcobs, masses, nitr=5):
     """ find transit times: loop over each planet (should be modified)
@@ -170,28 +150,119 @@ def find_transit_times_planets(t, x, v, a, tcobs, masses, nitr=5):
         tcarr = jnp.hstack([tcarr, tc])
     return tcarr
 
-"""
-def get_ttvs(self, elements, masses):
-    compute model transit times given orbtal elements and masses
+
+# new algorithm
+def get_tcflag(t, xjac, vjac):
+    """ find times just after the transit centers using *Jacobi* coordinates
 
         Args:
-            self: JaxTTV class
-            elements: orbital elements in JaxTTV format
-            masses: masses of the bodies (in units of solar mass)
+            t: times (Nstep,)
+            xjac: jacobi positions (Nstep,Norbit,xyz)
+            vjac: jacobi velocities (Nstep,Norbit,xyz)
 
         Returns:
-            model transit times (1D flattened array)
-            fractional energy change
+            tcflag: True if the time is just after the transit center (Nstep-1,)
 
-    x0, v0 = initialize_from_elements(elements, masses, self.t_start)
-    t, xv = integrate_xv(x0, v0, masses, self.times)
-    x, v, a = xvjac_to_xvacm(xv, masses)
-    etot = get_energy_map(x, v, masses)
-    tpars = find_transit_times_planets(t, x, v, a, self.tcobs, masses)
-    return tpars, etot[-1]/etot[0]-1.
-"""
+    """
+    g = jnp.sum(xjac[:,:,:2] * vjac[:,:,:2], axis=2) # Nstep, Norbit
+    tcflag = (g[:-1] < 0) & (g[1:] > 0) & (xjac[1:,:,2] > 0)
+    return tcflag
 
-## New algorithm
+
+def find_tc_idx(t, tcflag, j, tcobs):
+    """ find indices for times where tcflag is True
+
+        Args:
+            t: times (Nstep,)
+            tcflag: True if the time is just after the transit center (Nstep-1,)
+            j: orbit (planet) index
+            tcobs: transit times for jth orbit (planet)
+
+        Returns:
+            indices of times cloeset to transit centers (Nstep-1,)
+            should be put into times[1:], x[1:], etc.
+
+    """
+    tc_candidates = jnp.where(tcflag[:,j], t[1:], -jnp.inf)
+    tcidx = findidx_map(tc_candidates, jnp.atleast_1d(tcobs))
+    return tcidx
+
+# map along the transit axis
+find_tc_idx_map = vmap(find_tc_idx, (None,None,0,0), 0)
+
+
+def get_nrstep(x, v, a, j):
+    """ compute NR step for jth orbit (planet)
+
+        Args:
+            x: positions in CM frame (Norbit, xyz)
+            v: velocities in CM frame (Norbit, xyz)
+            a: accels in CM frame (Norbit, xyz)
+            j: orbit (planet) index, starting from 0
+
+        Returns:
+            NR step for jth orbit (planet)
+
+    """
+    xastj = x[j+1,:] - x[0,:]
+    vastj = v[j+1,:] - v[0,:]
+    aastj = a[j+1,:] - a[0,:]
+    gj = jnp.sum(xastj[:2] * vastj[:2])
+    dotgj = jnp.sum(vastj[:2] * vastj[:2]) + jnp.sum(xastj[:2] * aastj[:2])
+    stepj = - gj / dotgj
+    return stepj
+
+# map along the transit axis
+get_nrstep_map = vmap(get_nrstep, (0,0,0,0), 0)
+
+
+#@partial(jit, static_argnums=(0,))
+#def find_transit_times_all(self, t, xvjac, masses, nitr=5):
+def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
+    """ find transit times for all planets
+
+        Args:
+            pidxarr: array of orbit index starting from 0 (Ntransit,)
+            tcobsarray: flattened array of observed transit times (Ntransit,)
+            t: times (Nstep,)
+            xvjac: Jacobi positions and velocities (Nstep, x or v, Norbit, xyz)
+            masses: masses of the bodies (Nbody,)
+            nitr: number of Newton-Raphson iterations
+
+        Returns:
+            transit times (1D flattened array)
+            total energies around transit times
+
+    """
+    #pidxarr = self.pidx.astype(int) - 1
+    #tcobsarr = self.tcobs_flatten
+
+    xjac, vjac = xvjac[:,0,:,:], xvjac[:,1,:,:]
+    tcflag = get_tcflag(t, xjac, vjac)
+    tcidx = find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
+
+    tc = t[1:][tcidx]
+    xvjac_init = xvjac[1:][tcidx]
+    xcm_init, vcm_init, acm_init = xvjac_to_xvacm(xvjac_init, masses)
+    nrstep_init = get_nrstep_map(xcm_init, vcm_init, acm_init, pidxarr)
+
+    def tcstep(xvs, i):
+        xin, vin, step = xvs
+        xtc, vtc, atc = hermite4_step_map(xin, vin, masses, step)
+        xtc = jnp.transpose(xtc, axes=[2,0,1])
+        vtc = jnp.transpose(vtc, axes=[2,0,1])
+        atc = jnp.transpose(atc, axes=[2,0,1])
+        step = get_nrstep_map(xtc, vtc, atc, pidxarr)
+        return [xtc, vtc, step], step
+
+    _, steps = scan(tcstep, [xcm_init, vcm_init, nrstep_init], jnp.arange(nitr))
+    tc += nrstep_init + jnp.sum(steps, axis=0)
+
+    etot = get_energy_map(xcm_init, vcm_init, masses) # total energies around transit times
+
+    return tc, etot
+
+''' new algorithm v1
 def get_tcflag(t, x, v, a):
     """ get boolean flags for transit centers
 
@@ -237,31 +308,6 @@ def find_tc_init_idx(t, tcflag, nrstep, j, tcobs):
 find_tc_init_idx_map = vmap(find_tc_init_idx, (None,None,None,0,0), 0)
 
 
-def get_nrstep(x, v, a, j):
-    """ compute NR step for jth orbit (planet)
-
-        Args:
-            x: positions in CM frame (Norbit, xyz)
-            v: velocities in CM frame (Norbit, xyz)
-            a: accels in CM frame (Norbit, xyz)
-            j: orbit (planet) index, starting from 0
-
-        Returns:
-            NR step for jth orbit (planet)
-
-    """
-    xastj = x[j+1,:] - x[0,:]
-    vastj = v[j+1,:] - v[0,:]
-    aastj = a[j+1,:] - a[0,:]
-    gj = jnp.sum(xastj[:2] * vastj[:2])
-    dotgj = jnp.sum(vastj[:2] * vastj[:2]) + jnp.sum(xastj[:2] * aastj[:2])
-    stepj = - gj / dotgj
-    return stepj
-
-# map along the transit axis
-get_nrstep_map = vmap(get_nrstep, (0,0,0,0), 0)
-
-
 def find_transit_times_all(pidxarr, tcobsarr, t, x, v, a, masses, nitr=5):
     tcflag, nrstep = get_tcflag(t, x, v, a)
     tcidx, nrstep_init = find_tc_init_idx_map(t, tcflag, nrstep, pidxarr, tcobsarr)
@@ -284,3 +330,4 @@ def find_transit_times_all(pidxarr, tcobsarr, t, x, v, a, masses, nitr=5):
     tc += nrstep_init + jnp.sum(steps, axis=0)
 
     return tc
+'''
