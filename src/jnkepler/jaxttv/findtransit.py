@@ -1,7 +1,7 @@
 """ routines for finding transit times
 """
 __all__ = [
-    "find_transit_times_single", "find_transit_times_all"
+    "find_transit_times_single", "find_transit_times_all", "find_transit_times_kepler_all"
 ]
 
 #%%
@@ -9,7 +9,7 @@ import jax.numpy as jnp
 from jax import jit, vmap, grad
 from jax.lax import scan
 from functools import partial
-from .conversion import cm_to_astrocentric, xvjac_to_xvacm
+from .conversion import cm_to_astrocentric, xvjac_to_xvacm, jacobi_to_astrocentric, BIG_G
 from .hermite4 import hermite4_step_map
 from .utils import findidx_map, get_energy_map
 from jax.config import config
@@ -73,7 +73,7 @@ def find_transit_times_single(t, x, v, a, j, masses, nitr=5):
     return tc
 
 
-""" new algorithm w/o for loop """
+""" Newton-Raphson method w/o for loop """
 def get_tcflag(t, xjac, vjac):
     """ find times just after the transit centers using *Jacobi* coordinates
 
@@ -180,7 +180,122 @@ def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
     return tc, etot
 
 
-""" algorithm w/ for loop """
+""" TTVFast algorithm """
+def get_elements(x, v, gm):
+    """ get elements
+
+        Args:
+            x: positions (Norbit, xyz)
+            v: velocities (Norbit, xyz)
+            gm: 'GM' in Kepler's 3rd law
+
+        Returns:
+            n: mean motion
+            ecosE0, esinE0: eccentricity and eccentric anomaly
+            a/r0: semi-major axis divided by |x|
+
+    """
+    r0 = jnp.sqrt(jnp.sum(x*x, axis=1))
+    v0s = jnp.sum(v*v, axis=1)
+    u = jnp.sum(x*v, axis=1)
+    a = 1. / (2./r0 - v0s/gm)
+
+    n = jnp.sqrt(gm / (a*a*a))
+    ecosE0, esinE0 = 1. - r0 / a, u / (n*a*a)
+
+    return n, ecosE0, esinE0, a/r0
+
+
+def find_transit_times_kepler(xast, vast, kast, dt, nitr):
+    """ find transit times via interpolation
+    adapted from TTVFast https://github.com/kdeck/TTVFast, original scheme developed by Nesvorny et al. (2013, ApJ 777,3)
+
+        Args:
+            xast: astrocentric positions (Norbit, xyz)
+            vast: astrocentric velocities (Norbit, xyz)
+            kast: astrocentric GM
+            dt: integration time step
+
+        Returns:
+            time to the transit center
+
+    """
+    n, ecosE0, esinE0, a_r0 = get_elements(xast, vast, kast)
+    rsquared = jnp.sum(xast[:,:2]*xast[:,:2], axis=1)
+    vsquared = jnp.sum(vast[:,:2]*vast[:,:2], axis=1)
+    xdotv = jnp.sum(xast[:,:2]*vast[:,:2], axis=1)
+
+    def dEstep_transit(dE, i):
+        x2 = dE / 2.0
+        sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
+        f = 1.0 - a_r0*2.0*sx2*sx2
+        sx, cx = 2.0*sx2*cx2, cx2*cx2 - sx2*sx2
+        g = (2.0*sx2*(esinE0*sx2 + cx2/a_r0))/n
+        fp = 1.0 - cx*ecosE0 + sx*esinE0
+        fdot = -(a_r0/fp)*n*sx
+        fp2 = sx*ecosE0 + cx*esinE0
+        gdot = 1.0-2.0*sx2*sx2/fp
+
+        dgdotdz = -sx/fp+2.0*sx2*sx2/fp/fp*fp2
+        dfdz = -a_r0*sx
+        dgdz = 1.0/n*(sx*esinE0-(ecosE0-1.0)*cx)
+        dfdotdz = -n*a_r0/fp*(cx+sx/fp*fp2)
+
+        dotproduct = f*fdot*(rsquared)+g*gdot*(vsquared)+(f*gdot+g*fdot)*(xdotv)
+        dotproductderiv = dfdz*(gdot*xdotv+fdot*rsquared)+dfdotdz*(f*rsquared+g*xdotv)+dgdz*(fdot*xdotv+gdot*vsquared)+dgdotdz*(g*vsquared+f*xdotv)
+
+        return dE - dotproduct/dotproductderiv, None
+
+    dE0 = n * dt / 2.0
+    dE, _ = scan(dEstep_transit, dE0, jnp.arange(nitr))
+    x2 = dE / 2.0
+    sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
+    sx = 2.0 * sx2 * cx2
+    transitM = dE + esinE0 * 2.0 * sx2 * sx2 - sx * ecosE0
+
+    return transitM / n
+
+# map along the transit axis
+find_transit_times_kepler_map = vmap(find_transit_times_kepler, (0,0,0,None,None), 0)
+
+
+def find_transit_times_kepler_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=3):
+    """ find transit times for all planets via interpolation
+
+        Args:
+            pidxarr: array of orbit index starting from 0 (Ntransit,)
+            tcobsarray: flattened array of observed transit times (Ntransit,)
+            t: times (Nstep,)
+            xvjac: Jacobi positions and velocities (Nstep, x or v, Norbit, xyz)
+            masses: masses of the bodies (Nbody,)
+            nitr: number of Newton-Raphson iterations
+
+        Returns:
+            transit times (1D flattened array)
+
+    """
+    xjac, vjac = xvjac[:,0,:,:], xvjac[:,1,:,:]
+    tcflag = get_tcflag(t, xjac, vjac)
+    tcidx = find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
+
+    tc_ahead, tc_behind = t[1:][tcidx], t[1:][tcidx-1]
+    xvjac_ahead, xvjac_behind = xvjac[1:][tcidx], xvjac[1:][tcidx-1]
+
+    xast_ahead, vast_ahead = jacobi_to_astrocentric(xvjac_ahead[:,0,:,:], xvjac_ahead[:,1,:,:], masses)
+    xast_behind, vast_behind = jacobi_to_astrocentric(xvjac_behind[:,0,:,:], xvjac_behind[:,1,:,:], masses)
+
+    kast = BIG_G * (masses[1:] + masses[0])
+    kastarr = kast[pidxarr]
+
+    dt = jnp.diff(t)[0]
+    tau_ahead = tc_ahead + jnp.diag(find_transit_times_kepler_map(xast_ahead, vast_ahead, kastarr, -dt, nitr)[:,pidxarr])
+    tau_behind = tc_behind + jnp.diag(find_transit_times_kepler_map(xast_behind, vast_behind, kastarr, dt, nitr)[:,pidxarr])
+
+    tc = ( (tau_behind - tc_behind) * tau_ahead + (tc_ahead - tau_ahead) * tau_behind ) / (dt + tau_behind - tau_ahead)
+
+    return tc, None
+
+""" Newton-Raphson method w/ for loop """
 '''
 def find_transit_times(t, x, v, a, j, tcobs, masses, nitr=5):
     """ find transit times (jit version)

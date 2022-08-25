@@ -1,7 +1,7 @@
 __all__ = [
     "reduce_angle", "tic_to_u", "tic_to_m", "elements_to_xv", "xv_to_elements",
     "jacobi_to_astrocentric", "j2a_map", "astrocentric_to_cm", "a2cm_map", "cm_to_astrocentric",
-    "xvjac_to_xvacm"
+    "xvjac_to_xvacm", "xvjac_to_xvcm"
 ]
 
 
@@ -12,7 +12,6 @@ from .markley import get_E
 from jax.config import config
 config.update('jax_enable_x64', True)
 
-#%%
 BIG_G = 2.959122082855911e-4
 
 def reduce_angle(M):
@@ -73,7 +72,6 @@ def tic_to_m(tic, period, ecc, omega, t_epoch):
 
 def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
     """ convert single set of orbital elements to position and velocity
-    what orbital elements? -> depends on what 'mass' is
 
         Args:
             porb: orbital period (day)
@@ -82,7 +80,7 @@ def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
             omega: argument of periastron (radian)
             lnode: longitude of ascending node (radian)
             u: eccentric anomaly (radian)
-            mass: mass in "GM"
+            mass: mass in Kepler's 3rd law
 
         Returns:
             xout: positions (xyz, )
@@ -94,7 +92,6 @@ def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
 
     n = 2 * jnp.pi / porb
     na = (n * BIG_G * mass) ** (1./3.)
-    #na = (n * ki) ** (1./3.)
     R = 1.0 - ecc * cosu
 
     Pvec = jnp.array([cosw*cosO - sinw*sinO*cosi, cosw*sinO + sinw*cosO*cosi, sinw*sini])
@@ -262,3 +259,22 @@ def xvjac_to_xvacm(xv, masses):
     xcm, vcm = a2cm_map(xa, va, masses)
     acm = geta_map(xcm, masses)
     return xcm, vcm, acm
+
+
+def xvjac_to_xvcm(xv, masses):
+    """ Conversion from Jacobi to center-of-mass
+    xv is assumed to be the result of integration: 1st axis is for the times.
+
+        Args:
+            xv: positions and velocities in Jacobi coordinates (Nstep, x or v, Norbit, xyz)
+            masses: masses of the bodies (Nbody,), solar unit
+
+        Returns:
+            positions in the CoM frame (Nstep, Norbit)
+            velocities in the CoM frame
+            accelerations in the CoM frame
+
+    """
+    xa, va = jacobi_to_astrocentric(xv[:,0,:], xv[:,1,:], masses)
+    xcm, vcm = a2cm_map(xa, va, masses)
+    return xcm, vcm

@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from functools import partial
 from .utils import *
 from .conversion import *
-from .findtransit import find_transit_times_single, find_transit_times_all
+from .findtransit import find_transit_times_single, find_transit_times_all, find_transit_times_kepler_all
 from .symplectic import integrate_xv
 from .hermite4 import integrate_xv as integrate_xv_hermite4
 from jax import jit, grad
@@ -16,20 +16,26 @@ config.update('jax_enable_x64', True)
 
 #%%
 class JaxTTV:
-    """ main class """
-    def __init__(self, t_start, t_end, dt):
+    """ main class for TTV analysis """
+    def __init__(self, t_start, t_end, dt, nitr_kepler=3, transit_time_method='newton-raphson', nitr_transit=5):
         """ initialization
 
             Args:
                 t_start: start time of integration
                 t_end: end time of integration
                 dt: integration time step (day)
+                nitr_kepler: number of iterations in Kepler steps
+                transit_time_method: Newton-Raphson or interpolation
+                nitr_transit: number of iterations in transit-finding loop (only for Newton-Raphson)
 
         """
         self.t_start = t_start
         self.t_end = t_end
         self.dt = dt
         self.times = jnp.arange(t_start, t_end, dt)
+        self.nitr_kepler = nitr_kepler
+        self.transit_time_method = transit_time_method
+        self.nitr_transit = nitr_transit
 
     def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
         """ set observed transit times
@@ -99,7 +105,7 @@ class JaxTTV:
         return np.array(t0fit), np.array(p_new)
 
     @partial(jit, static_argnums=(0,))
-    def get_ttvs(self, elements, masses, nitr_kepler=3, nitr_transit=5):
+    def get_ttvs(self, elements, masses):
         """ compute model transit times (jitted version)
         This function returns only transit times that are closest to the observed ones.
         To get all the transit times, get_ttvs_nodata should be used instead.
@@ -113,10 +119,17 @@ class JaxTTV:
                 fractional energy change
 
         """
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start)
-        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=nitr_kepler)
-        transit_times, etot = find_transit_times_all(self.pidx.astype(int)-1, self.tcobs_flatten, times, xvjac, masses, nitr=nitr_transit)
-        return transit_times, etot[-1]/etot[0]-1.
+        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
+        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
+        orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
+        tcobs1d = self.tcobs_flatten # 1D array of observed transit times
+        if self.transit_time_method == 'newton-raphson':
+            transit_times, etot = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
+            ediff = etot[-1]/etot[0] - 1.
+        else:
+            transit_times, _ = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+            ediff = get_energy_diff_jac(xvjac, masses)
+        return transit_times, ediff
 
     def get_ttvs_nodata(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,
         nitr_transit=5, nitr_kepler=3, symplectic=True):
@@ -242,7 +255,7 @@ class JaxTTV:
             ax[1].plot(x0, np.exp(-0.5*x0**2/sd**2)/np.sqrt(2*np.pi)/sd, lw=1, color='C0', ls='dashed', label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]))
             ax[1].legend(loc='lower right')
 
-    def check_timing_precision(self, params, dtfrac=1e-3, nitr_transit=10, nitr_kepler=5, symplectic=False):
+    def check_timing_precision(self, params, dtfrac=1e-3, nitr_transit=10, nitr_kepler=10, symplectic=False):
         """ compare get_ttvs outputs with those from get_ttvs_nodata with a smaller timestep
         to check the precision of the former (may be obsolete)
 
@@ -251,7 +264,8 @@ class JaxTTV:
                 dtfrac: (innermost period) * dtfrac is used for the comparison integration
 
             Returns:
-                model transit times from get_ttvs
+                tc: model transit times from get_ttvs
+                tc2: model transit times using a smaller timestep
 
         """
         elements, masses = params_to_elements(params, self.nplanet)

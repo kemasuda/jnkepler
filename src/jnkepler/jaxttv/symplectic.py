@@ -112,7 +112,7 @@ def Hint(x, v, masses):
 
     return Hint
 
-gHint = grad(Hint)
+gHint = grad(Hint) # default to argnums=0
 
 
 def Hintgrad(x, v, masses):
@@ -147,12 +147,12 @@ def nbody_kicks(x, v, ki, masses, dt):
             kicked velocities
 
     """
-    dv = - ki[:, None] * dt * Hintgrad(x, v, masses)
-    return x, v+dv
+    dv = -ki[:, None] * dt * Hintgrad(x, v, masses)
+    return x, v + dv
 
-"""
+'''
 def symplectic_step(x, v, ki, masses, dt):
-    advance the system by a single symplectic step
+    """ advance the system by a single symplectic step
     (0.5dt kepler) -> (velocity kick) -> (0.5dt kepler again)
 
         Args:
@@ -166,12 +166,13 @@ def symplectic_step(x, v, ki, masses, dt):
             new positions
             new velocities
 
+    """
     dt2 = 0.5 * dt
     x, v = kepler_step(x, v, ki, dt2)
     x, v = nbody_kicks(x, v, ki, masses, dt)
     xout, vout = kepler_step(x, v, ki, dt2)
     return xout, vout
-"""
+'''
 
 def integrate_xv(x, v, masses, times, nitr=3):
     """ symplectic integration of the orbits

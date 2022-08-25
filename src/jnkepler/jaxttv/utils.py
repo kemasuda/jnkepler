@@ -1,5 +1,5 @@
 __all__ = [
-    "initialize_jacobi_xv", "get_energy_map", "get_energy_diff",
+    "initialize_jacobi_xv", "get_energy_map", "get_energy_diff", "get_energy_diff_jac",
     "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map"
 ]
 
@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from jax import jit, vmap
 from jax.lax import scan
 from .markley import get_E
-from .conversion import tic_to_u, elements_to_xv, xv_to_elements, BIG_G
+from .conversion import tic_to_u, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
 from jax.config import config
 config.update('jax_enable_x64', True)
 
@@ -78,6 +78,24 @@ def get_energy_diff(xva, masses):
     """
     _xva = jnp.array([xva[0,:,:,:], xva[-1,:,:,:]])
     etot = get_energy_map(_xva[:,0,:,:], _xva[:,1,:,:], masses)
+    return etot[1]/etot[0] - 1.
+
+
+@jit
+def get_energy_diff_jac(xvjac, masses):
+    """ compute fractional energy change given integration result
+
+        Args:
+            xvjac: Jacobi posisions and velocities (Nstep, x or v, Norbit, xyz)
+            masses: masses of the bodies (Nbody,)
+
+        Returns:
+            fractional change in total energy
+
+    """
+    _xvjac = jnp.array([xvjac[0], xvjac[-1]])
+    _xcm, _vcm = xvjac_to_xvcm(_xvjac, masses)
+    etot = get_energy_map(_xcm, _vcm, masses)
     return etot[1]/etot[0] - 1.
 
 
