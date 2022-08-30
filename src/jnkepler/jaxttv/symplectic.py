@@ -2,7 +2,7 @@
 much borrowed from TTVFast https://github.com/kdeck/TTVFast
 """
 __all__ = [
-    "integrate_xv"
+    "integrate_xv", "kepler_step_map", "kick_kepler_map"
 ]
 
 import jax.numpy as jnp
@@ -193,19 +193,34 @@ def integrate_xv(x, v, masses, times, nitr=3):
 
     # transformation between the mapping and real Hamiltonian
     x, v = real_to_mapTO(x, v, ki, masses, dtarr[0])
+    x, v = kepler_step(x, v, ki, dtarr[0]*0.5, nitr=nitr) # dt/2 ahead of the starting time
 
-    # single Kepler step (could be summarized as sympletic_step above)
+    # advance the system by dt
     def step(xvin, dt):
         x, v = xvin
-        dt2 = 0.5 * dt
-        x, v = kepler_step(x, v, ki, dt2, nitr=nitr)
         x, v = nbody_kicks(x, v, ki, masses, dt)
-        xout, vout = kepler_step(x, v, ki, dt2, nitr=nitr)
+        xout, vout = kepler_step(x, v, ki, dt, nitr=nitr)
         return [xout, vout], jnp.array([xout, vout])
 
     _, xv = scan(step, [x, v], dtarr)
 
-    return times[1:], xv
+    return times[1:]+0.5*dtarr[0], xv
+
+
+def kepler_step_map(xjac, vjac, masses, dt, nitr=3):
+    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
+    step = lambda x, v: kepler_step(x, v, ki, dt, nitr=nitr)
+    step_map = vmap(step, (0,0), 0)
+    return step_map(xjac, vjac)
+
+
+def kick_kepler_map(xjac, vjac, masses, dt, nitr=3):
+    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
+    def kick_kepler(x, v):
+        x, v = nbody_kicks(x, v, ki, masses, 2*dt)
+        return kepler_step(x, v, ki, dt, nitr=nitr)
+    func_map = vmap(kick_kepler, (0,0), 0)
+    return func_map(xjac, vjac)
 
 
 def compute_corrector_coefficientsTO():

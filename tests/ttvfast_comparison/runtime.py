@@ -48,12 +48,12 @@ def init_jaxttv(ttvfast_results, t_start, t_end, dt, npl):
         p_init.append(p)
     p_init = np.array(p_init)
 
-    jttv = JaxTTV(t_start, t_end, dt)
+    jttv = JaxTTV(t_start, t_end, dt, transit_time_method='int')
     jttv.set_tcobs(tcobs, p_init)
 
     return jttv, np.array(list(itertools.chain.from_iterable(tcobs)))
 
-def compare_transit_times(pdic_ttvfast, params_jttv, time=False, dt_factor=1.):
+def compare_transit_times(pdic_ttvfast, params_jttv, time=False, dt_factor=1):
     planets, smass, t_start, dt, t_end, npl = params_for_ttvfast(pdic_ttvfast)
     ttvfast_results = ttvfast.ttvfast(planets, smass, t_start, dt, t_end)
     jttv, tc_ttvfast = init_jaxttv(ttvfast_results, t_start, t_end, dt*dt_factor, npl)

@@ -8,7 +8,7 @@ from functools import partial
 from .utils import *
 from .conversion import *
 from .findtransit import find_transit_times_single, find_transit_times_all, find_transit_times_kepler_all
-from .symplectic import integrate_xv
+from .symplectic import integrate_xv, kepler_step_map
 from .hermite4 import integrate_xv as integrate_xv_hermite4
 from jax import jit, grad
 from jax.config import config
@@ -25,7 +25,7 @@ class JaxTTV:
                 t_end: end time of integration
                 dt: integration time step (day)
                 nitr_kepler: number of iterations in Kepler steps
-                transit_time_method: Newton-Raphson or interpolation
+                transit_time_method: Newton-Raphson or interpolation (latter not fully tested)
                 nitr_transit: number of iterations in transit-finding loop (only for Newton-Raphson)
 
         """
@@ -124,17 +124,17 @@ class JaxTTV:
         orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
         tcobs1d = self.tcobs_flatten # 1D array of observed transit times
         if self.transit_time_method == 'newton-raphson':
-            transit_times, etot = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
-            ediff = etot[-1]/etot[0] - 1.
+            transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
         else:
-            transit_times, _ = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
-            ediff = get_energy_diff_jac(xvjac, masses)
+            transit_times = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+        ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
         return transit_times, ediff
 
     def get_ttvs_nodata(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,
         nitr_transit=5, nitr_kepler=3, symplectic=True):
         """ compute all model transit times between t_start and t_end
         This function is slower than get_ttvs and should not be used for fitting.
+        TODO: should be refactored, since func_jitted needs to be compiled every time
 
             Args:
                 elements: orbital elements in JaxTTV format
@@ -152,23 +152,35 @@ class JaxTTV:
                 fractional energy change
 
         """
-        if t_start is not None:
+        if t_start is not None: # TODO: add proper assertion
             times, t0 = jnp.arange(t_start, t_end, dt), t_start
         else:
-            times, t0 = self.times, self.t_start
+            times, t0, dt = self.times, self.t_start, self.dt
 
         xjac0, vjac0 = initialize_jacobi_xv(elements, masses, t0)
+
         if symplectic:
-            t, xvjac = integrate_xv(xjac0, vjac0, masses, times, nitr=nitr_kepler)
-            xcm, vcm, acm = xvjac_to_xvacm(xvjac, masses)
-            etot = get_energy_map(xcm, vcm, masses)
-            de_frac = etot[-1] / etot[0] - 1.
+            # here the precision is lost w/o jit
+            @jit
+            def func_jitted():
+                t, xvjac = integrate_xv(xjac0, vjac0, masses, times, nitr=nitr_kepler)
+                dt_correct = -0.5 * dt
+                de_frac = get_energy_diff_jac(xvjac, masses, dt_correct)
+                t += dt_correct
+                xjac, vjac = kepler_step_map(xvjac[:,0,:,:], xvjac[:,1,:,:], masses, dt_correct)
+                xcm, vcm, acm = xvjac_to_xvacm(xjac, vjac, masses)
+                return t, xcm, vcm, acm, de_frac
         else:
-            xast0, vast0 = jacobi_to_astrocentric(xjac0, vjac0, masses)
-            xcm, vcm = astrocentric_to_cm(xast0, vast0, masses)
-            t, xvacm = integrate_xv_hermite4(xcm, vcm, masses, times)
-            xcm, vcm, acm = xvacm[:,0,:,:], xvacm[:,1,:,:], xvacm[:,2,:,:]
-            de_frac = get_energy_diff(xvacm, masses)
+            @jit
+            def func_jitted():
+                xast0, vast0 = jacobi_to_astrocentric(xjac0, vjac0, masses)
+                xcm, vcm = astrocentric_to_cm(xast0, vast0, masses)
+                t, xvacm = integrate_xv_hermite4(xcm, vcm, masses, times)
+                xcm, vcm, acm = xvacm[:,0,:,:], xvacm[:,1,:,:], xvacm[:,2,:,:]
+                de_frac = get_energy_diff(xvacm, masses)
+                return t, xcm, vcm, acm, de_frac
+
+        t, xcm, vcm, acm, de_frac = func_jitted()
 
         tcarr = []
         for pidx in range(1, len(masses)):
