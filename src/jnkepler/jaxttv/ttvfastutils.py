@@ -2,7 +2,7 @@
 __all__ = ["params_for_ttvfast", "get_ttvfast_model"]
 
 import pandas as pd
-from jax import jit
+from jax import jit, vmap
 from .utils import convert_elements
 
 def params_for_ttvfast(samples, t_epoch, WHsplit=True, angles_in_degrees=True,
