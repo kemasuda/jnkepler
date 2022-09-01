@@ -1,17 +1,19 @@
 
 __all__ = ["params_for_ttvfast", "get_ttvfast_model"]
 
+import numpy as np
 import pandas as pd
 from jax import jit, vmap
 from .utils import convert_elements
 
-def params_for_ttvfast(samples, t_epoch, WHsplit=True, angles_in_degrees=True,
+def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_degrees=True,
                        names=["period", "eccentricity", "inclination", "argument", "longnode", "mean_anomaly"]):
     """ convert JaxTTV samples into TTVFast (or other) format
 
         Args:
             samples: mcmc.get_samples()
             t_epoch: time at which osculating elements are defined
+            num_planets: number of planets
             WHsplit: True for TTVFast
             angles_in_degrees: If True, angles are in degrees
 
@@ -21,7 +23,7 @@ def params_for_ttvfast(samples, t_epoch, WHsplit=True, angles_in_degrees=True,
     """
     def func(e, m):
         return convert_elements(e, m, t_epoch, WHsplit=WHsplit)
-    convert_elements_map = jit(vmap)(func, (0,0,), 0)
+    convert_elements_map = jit(vmap(func, (0,0,), 0))
     elements, masses = convert_elements_map(samples['elements'], samples['masses'])
 
     pdic = {}
