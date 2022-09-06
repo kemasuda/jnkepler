@@ -1,5 +1,5 @@
 __all__ = [
-    "initialize_jacobi_xv", "get_energy_map", "get_energy_diff", "get_energy_diff_jac",
+    "initialize_jacobi_xv", "get_energy_diff", "get_energy_diff_jac",
     "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map"
 ]
 
