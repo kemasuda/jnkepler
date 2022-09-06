@@ -41,6 +41,7 @@ def dEstep(x, ecosE0, esinE0, dM):
 
 def kepler_step(x, v, gm, dt, nitr=3):
     """ Kepler step
+    NOTE: should use jax.lax.while_loop w/ forward-mode differentiation?
 
         Args:
             x: positions (Norbit, xyz)
@@ -116,8 +117,7 @@ gHint = grad(Hint) # default to argnums=0
 
 
 def Hintgrad(x, v, masses):
-    """ gradient of the interaction Hamiltonian
-    times (star mass / planet mass)
+    """ gradient of the interaction Hamiltonian times (star mass / planet mass)
 
         Args:
             x: positions (Norbit, xyz)
@@ -150,29 +150,6 @@ def nbody_kicks(x, v, ki, masses, dt):
     dv = -ki[:, None] * dt * Hintgrad(x, v, masses)
     return x, v + dv
 
-'''
-def symplectic_step(x, v, ki, masses, dt):
-    """ advance the system by a single symplectic step
-    (0.5dt kepler) -> (velocity kick) -> (0.5dt kepler again)
-
-        Args:
-            x: positions (Norbit, xyz)
-            v: velocities (Norbit, xyz)
-            ki: GM values
-            masses: masses of the bodies (Nbody,), solar unit
-            dt: time step
-
-        Returns:
-            new positions
-            new velocities
-
-    """
-    dt2 = 0.5 * dt
-    x, v = kepler_step(x, v, ki, dt2)
-    x, v = nbody_kicks(x, v, ki, masses, dt)
-    xout, vout = kepler_step(x, v, ki, dt2)
-    return xout, vout
-'''
 
 def integrate_xv(x, v, masses, times, nitr=3):
     """ symplectic integration of the orbits
@@ -184,7 +161,7 @@ def integrate_xv(x, v, masses, times, nitr=3):
             times: cumulative sum of time steps
 
         Returns:
-            times (initial time omitted)
+            times (initial time omitted; dt/2 ahead of the input)
             Jacobi position/velocity array (Nstep, x or v, Norbit, xyz)
 
     """
@@ -208,6 +185,18 @@ def integrate_xv(x, v, masses, times, nitr=3):
 
 
 def kepler_step_map(xjac, vjac, masses, dt, nitr=3):
+    """ vmap version of kepler_step; map along the first axis (Ntime)
+
+        Args:
+            xjac: Jacobi positions (Ntime, Norbit, xyz)
+            vjac: Jacobi velocities (Ntime, Norbit, xyz)
+            masses: masses of the bodies (Nbody,), in units of solar mass
+            dt: common time step
+
+        Returns:
+            new Jacobi positions and velocities (Ntime, x or v, Norbit, xyz)
+
+    """
     ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
     step = lambda x, v: kepler_step(x, v, ki, dt, nitr=nitr)
     step_map = vmap(step, (0,0), 0)
@@ -215,6 +204,18 @@ def kepler_step_map(xjac, vjac, masses, dt, nitr=3):
 
 
 def kick_kepler_map(xjac, vjac, masses, dt, nitr=3):
+    """ vmap version of nbody_kicks + kepler_step; map along the first axis (Ntime)
+
+        Args:
+            xjac: jacobi positions (Ntime, Norbit, xyz)
+            vjac: jacobi velocities (Ntime, Norbit, xyz)
+            masses: masses of the bodies (Nbody,), in units of solar mass
+            dt: common time step
+
+        Returns:
+            new jacobi positions and velocities (Ntime, x or v, Norbit, xyz)
+
+    """
     ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
     def kick_kepler(x, v):
         x, v = nbody_kicks(x, v, ki, masses, 2*dt)
