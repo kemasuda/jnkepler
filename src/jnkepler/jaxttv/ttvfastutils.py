@@ -14,8 +14,8 @@ def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_de
             samples: mcmc.get_samples()
             t_epoch: time at which osculating elements are defined
             num_planets: number of planets
-            WHsplit: True for TTVFast
-            angles_in_degrees: If True, angles are in degrees
+            WHsplit: True for TTVFast; False for e.g. REBOUND (cf. Section 2.2 of Rein & Tamayo 2015, MNRAS 452, 376)
+            angles_in_degrees: If True, angles are returned in degrees
 
         Returns:
             dataframe containing parameters
