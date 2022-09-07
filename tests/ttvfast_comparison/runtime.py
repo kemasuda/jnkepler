@@ -48,16 +48,17 @@ def init_jaxttv(ttvfast_results, t_start, t_end, dt, npl):
         p_init.append(p)
     p_init = np.array(p_init)
 
-    jttv = JaxTTV(t_start, t_end, dt)
+    jttv = JaxTTV(t_start, t_end, dt, transit_time_method='int')
     jttv.set_tcobs(tcobs, p_init)
 
     return jttv, np.array(list(itertools.chain.from_iterable(tcobs)))
 
-def compare_transit_times(pdic_ttvfast, params_jttv, time=False, dt_factor=1.):
+def compare_transit_times(pdic_ttvfast, params_jttv, time=False, dt_factor=1):
     planets, smass, t_start, dt, t_end, npl = params_for_ttvfast(pdic_ttvfast)
     ttvfast_results = ttvfast.ttvfast(planets, smass, t_start, dt, t_end)
     jttv, tc_ttvfast = init_jaxttv(ttvfast_results, t_start, t_end, dt*dt_factor, npl)
     tc_jttv, de = jttv.get_ttvs(*params_to_elements(params_jttv, jttv.nplanet))
+    elements, masses = params_to_elements(params_jttv, jttv.nplanet)
 
     if time:
         names = {**globals(), **locals()}
@@ -66,10 +67,11 @@ def compare_transit_times(pdic_ttvfast, params_jttv, time=False, dt_factor=1.):
         result_str = "%.2f ms per loop (%d loops)"%(result / loop * 1000, loop)
         print ()
         print ("TTVFast timeit:", result_str)
-        result = timeit.timeit('jttv.get_ttvs(*params_to_elements(params_jttv, jttv.nplanet))', globals=names, number=loop)
+        result = timeit.timeit('jttv.get_ttvs(elements, masses)', globals=names, number=loop)
         result_str = "%.2f ms per loop (%d loops)"%(result / loop * 1000, loop)
         print ("JaxTTV timeit:", result_str)
 
+        """ moved to tests/jaxttv/runtime.py
         elements, masses = params_to_elements(params_jttv, jttv.nplanet)
         func = lambda elements, masses: jnp.sum(jttv.get_ttvs(elements, masses)[0])
         gfunc = jit(grad(func))
@@ -77,6 +79,7 @@ def compare_transit_times(pdic_ttvfast, params_jttv, time=False, dt_factor=1.):
         result = timeit.timeit('gfunc(elements, masses)', globals=names, number=loop)
         result_str = "%.2f ms per loop (%d loops)"%(result / loop * 1000, loop)
         print ("JaxTTV gradient timeit:", result_str)
+        """
 
     return tc_jttv, tc_ttvfast
 

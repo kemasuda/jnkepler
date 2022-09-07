@@ -1,4 +1,4 @@
-__all__ = ["JaxTTV"]
+__all__ = ["JaxTTV", "plot_model"]
 
 #%%
 import numpy as np
@@ -8,7 +8,7 @@ from functools import partial
 from .utils import *
 from .conversion import *
 from .findtransit import find_transit_times_single, find_transit_times_all, find_transit_times_kepler_all
-from .symplectic import integrate_xv
+from .symplectic import integrate_xv, kepler_step_map
 from .hermite4 import integrate_xv as integrate_xv_hermite4
 from jax import jit, grad
 from jax.config import config
@@ -25,7 +25,7 @@ class JaxTTV:
                 t_end: end time of integration
                 dt: integration time step (day)
                 nitr_kepler: number of iterations in Kepler steps
-                transit_time_method: Newton-Raphson or interpolation
+                transit_time_method: Newton-Raphson or interpolation (latter not fully tested)
                 nitr_transit: number of iterations in transit-finding loop (only for Newton-Raphson)
 
         """
@@ -45,7 +45,7 @@ class JaxTTV:
             Args:
                 tcobs: list of the arrays of transit times for each planet
                 p_init: initial guess for the mean orbital period of each planet
-                errorobs: transit time error (currently assumed to be Gaussian),same format as tcobs
+                errorobs: transit time error (currently assumed to be Gaussian), same format as tcobs
 
         """
         self.tcobs = tcobs
@@ -54,8 +54,10 @@ class JaxTTV:
         self.nbody = len(tcobs) + 1
         self.p_init = p_init
         if errorobs is None:
+            self.errorobs = None
             self.errorobs_flatten = jnp.ones_like(self.tcobs_flatten)
         else:
+            self.errorobs = errorobs
             self.errorobs_flatten = np.hstack([e for e in errorobs])
 
         pidx, tcobs_linear, ttvamp = np.array([]), np.array([]), np.array([])
@@ -88,27 +90,29 @@ class JaxTTV:
             print ("# integration ends at:".ljust(35) + "%.2f"%self.t_end)
             print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
 
-    def update_period(self):
-        """ Re-derive linear ephemeris if necessary
+    def linear_ephemeris(self):
+        """ (Re)derive linear ephemeris when necessary
 
             Returns:
                 array of t0, array of P from linear fitting
 
         """
         p_new, t0_new = [], []
+
         for j in range(self.nplanet):
             tc = self.tcobs[j]
             m = np.round((tc - tc[0]) / self.p_init[j])
             pfit, t0fit = np.polyfit(m, tc, deg=1)
             t0_new.append(t0fit)
             p_new.append(pfit)
-        return np.array(t0fit), np.array(p_new)
+
+        return np.array(t0_new), np.array(p_new)
 
     @partial(jit, static_argnums=(0,))
     def get_ttvs(self, elements, masses):
         """ compute model transit times (jitted version)
         This function returns only transit times that are closest to the observed ones.
-        To get all the transit times, get_ttvs_nodata should be used instead.
+        To get all the transit times, use get_ttvs_nodata instead.
 
             Args:
                 elements: orbital elements in JaxTTV format
@@ -124,11 +128,10 @@ class JaxTTV:
         orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
         tcobs1d = self.tcobs_flatten # 1D array of observed transit times
         if self.transit_time_method == 'newton-raphson':
-            transit_times, etot = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
-            ediff = etot[-1]/etot[0] - 1.
+            transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
         else:
-            transit_times, _ = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
-            ediff = get_energy_diff_jac(xvjac, masses)
+            transit_times = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+        ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
         return transit_times, ediff
 
     def get_ttvs_nodata(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,
@@ -145,30 +148,25 @@ class JaxTTV:
                 flatten: if True, the returned transit time array is flattened
                 nitr_transit: # of iterations in transit-search loop
                 nitr_kepler: # of iterations in Kepler step (for symplectic only)
-                symplectic: if True use symplectic; otherwise Hermite4
+                symplectic: if True use symplectic; otherwise Hermite4 (needs smaller dt in general)
 
             Returns:
                 list or 1D array (flatten=True) of model transit times
                 fractional energy change
 
         """
-        if t_start is not None:
-            times, t0 = jnp.arange(t_start, t_end, dt), t_start
+        if (t_start is None) or (t_end is None) or (dt is None):
+            times, t0, dt = self.times, self.t_start, self.dt
         else:
-            times, t0 = self.times, self.t_start
+            times, t0 = jnp.arange(t_start, t_end, dt), t_start
 
         xjac0, vjac0 = initialize_jacobi_xv(elements, masses, t0)
+
+        # note that the function for integration requires jit to avoid precision loss
         if symplectic:
-            t, xvjac = integrate_xv(xjac0, vjac0, masses, times, nitr=nitr_kepler)
-            xcm, vcm, acm = xvjac_to_xvacm(xvjac, masses)
-            etot = get_energy_map(xcm, vcm, masses)
-            de_frac = etot[-1] / etot[0] - 1.
+            t, xcm, vcm, acm, de_frac = integrate_orbits_symplectic(xjac0, vjac0, masses, times, dt, nitr_kepler)
         else:
-            xast0, vast0 = jacobi_to_astrocentric(xjac0, vjac0, masses)
-            xcm, vcm = astrocentric_to_cm(xast0, vast0, masses)
-            t, xvacm = integrate_xv_hermite4(xcm, vcm, masses, times)
-            xcm, vcm, acm = xvacm[:,0,:,:], xvacm[:,1,:,:], xvacm[:,2,:,:]
-            de_frac = get_energy_diff(xvacm, masses)
+            t, xcm, vcm, acm, de_frac = integrate_orbits_hermite(xjac0, vjac0, masses, times)
 
         tcarr = []
         for pidx in range(1, len(masses)):
@@ -180,7 +178,7 @@ class JaxTTV:
         return tcarr, de_frac
 
     def quicklook(self, model, sigma=None, save=None):
-        """ plot observed and model TTVs
+        """ plot observed and model TTVs (may be obsolete given plot_model)
 
             Args:
                 model: model transit times (1D flattened)
@@ -357,6 +355,134 @@ class JaxTTV:
         pfinal = popt
 
         if plot:
-            self.quicklook(getmodel(pfinal), save=save)
+            #self.quicklook(getmodel(pfinal), save=save)
+            t0_lin, p_lin = self.linear_ephemeris()
+            elements, masses = params_to_elements(pfinal, self.nplanet)
+            tcall, _ = self.get_ttvs_nodata(elements, masses)
+            plot_model(tcall, self.tcobs, self.errorobs, t0_lin, p_lin, save=save)
 
         return pfinal
+
+    def sample_means_and_stds(self, samples, N=50):
+        """ compute mean and standard deviation of transit time models from HMC samples
+
+            Args:
+                samples: dictionary containing parameter samples (output of mcmc.get_samples())
+                N: number of samples to be used for calculation
+
+            Returns:
+                means and standard deviations of transit time models, list of length(nplanet)
+
+        """
+        np.random.seed(123)
+        sample_indices = np.random.randint(0, len(samples['masses']), N)
+        models, means, stds = [], [], []
+        for idx in sample_indices:
+            elements, masses = samples['elements'][idx], samples['masses'][idx]
+            models.append(self.get_ttvs_nodata(elements, masses)[0])
+        for j in range(self.nplanet):
+            models_j = np.array([models[s][j] for s in range(len(sample_indices))])
+            means.append(np.mean(models_j, axis=0))
+            stds.append(np.std(models_j, axis=0))
+        return means, stds
+
+
+@partial(jit, static_argnums=(5,))
+def integrate_orbits_symplectic(xjac0, vjac0, masses, times, dt, nitr_kepler):
+    """ symplectic integration of the orbits
+
+        Args:
+            xjac0: initial Jacobi positions (Norbit, xyz)
+            vjac0: initial Jacobi velocities (Norbit, xyz)
+            masses: masses of the bodies (in units of solar mass), (Nbody,)
+            times: cumulative sum of time steps (note: step assumed to be constant)
+            nitr_kepler: number of iterations in Kepler steps
+
+        Returns:
+            times, x/v/a in CM frame (Nstep, Norbit, xyz), fractional energy change
+
+    """
+    # symplectic integration
+    t, xvjac = integrate_xv(xjac0, vjac0, masses, times, nitr=nitr_kepler)
+
+    # account for the fact that output of integrate_xv is dt/2 ahead of the completion of the sympletic step
+    dt_correct = -0.5 * dt
+    de_frac = get_energy_diff_jac(xvjac, masses, dt_correct)
+    t += dt_correct
+    xjac, vjac = kepler_step_map(xvjac[:,0,:,:], xvjac[:,1,:,:], masses, dt_correct)
+
+    # conversion to CM frame
+    xcm, vcm, acm = xvjac_to_xvacm(xjac, vjac, masses)
+
+    return t, xcm, vcm, acm, de_frac
+
+
+@jit
+def integrate_orbits_hermite(xjac0, vjac0, masses, times):
+    """ symplectic integration of the orbits
+
+        Args:
+            xjac0: initial Jacobi positions (Norbit, xyz)
+            vjac0: initial Jacobi velocities (Norbit, xyz)
+            masses: masses of the bodies (in units of solar mass), (Nbody,)
+            times: cumulative sum of time steps (note: step assumed to be constant)
+
+        Returns:
+            times, x/v/a in CM frame (Nstep, Norbit, xyz), fractional energy change
+
+    """
+    xast0, vast0 = jacobi_to_astrocentric(xjac0, vjac0, masses)
+    xcm, vcm = astrocentric_to_cm(xast0, vast0, masses)
+    t, xvacm = integrate_xv_hermite4(xcm, vcm, masses, times)
+    xcm, vcm, acm = xvacm[:,0,:,:], xvacm[:,1,:,:], xvacm[:,2,:,:]
+    de_frac = get_energy_diff(xvacm, masses)
+    return t, xcm, vcm, acm, de_frac
+
+
+def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
+               tcmodelunclist=None, tmargin=100., save=None,
+               unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
+    """ plot transit time model
+
+        Args:
+            tcmodellist: list of the arrays of model transit times for each planet
+            tcobslist: list of the arrays of observed transit times for each planet
+            errorobslist: list of the arrays of observed transit time errors for each planet
+            t0_lin, p_lin: linear ephemeris used to show TTVs (n_planet,)
+            tcmodelunclist: model uncertainty (same format as tcmodellist)
+            tmargin: margin in x axis
+            save: if not None, plot is saved as "save_planet#.png"
+            unit: TTV unit (defaults to minutes)
+            ylabel, xlabel: axis labels in plot
+
+    """
+    for j, (tcmodel, tcobs, errorobs, t0, p) in enumerate(zip(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin)):
+        tcmodel, tcobs, errorobs = np.array(tcmodel), np.array(tcobs), np.array(errorobs)
+
+        plt.figure(figsize=(8,5))
+        plt.xlim(np.min(tcobs)-tmargin, np.max(tcobs)+tmargin)
+        plt.ylabel(ylabel)
+        plt.xlabel(xlabel)
+        tnumobs = np.round((tcobs - t0)/p).astype(int)
+        tnummodel = np.round((tcmodel - t0)/p).astype(int)
+        plt.errorbar(tcobs, (tcobs-t0-tnumobs*p)*unit, yerr=errorobs*unit, zorder=1000,
+                     fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
+        idxm = tcmodel < np.max(tcobs) + tmargin
+        tlin = t0 + tnummodel * p
+        plt.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, 's-', lw=1, mfc='white', color='steelblue',
+                 zorder=-1000, label='model', alpha=0.9)
+        if tcmodelunclist is not None:
+            munc = tcmodelunclist[j]
+            plt.fill_between(tcmodel[idxm], (tcmodel-munc-tlin)[idxm]*unit,
+                            (tcmodel+munc-tlin)[idxm]*unit,
+                             lw=1, color='steelblue', zorder=-1000, alpha=0.2)
+        plt.title("planet %d"%(j+1))
+
+        # change legend order
+        handles, labels = plt.gca().get_legend_handles_labels()
+        order = [1,0]
+        plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order],
+                   loc='upper left', bbox_to_anchor=(1,1))
+
+        if save is not None:
+            plt.savefig(save+"_planet%d.png"%(j+1), dpi=200, bbox_inches="tight")

@@ -1,5 +1,7 @@
 # jnkepler
-modeling non-Keplerian dynamics using jax (develop branch)
+JAX code for modeling nearly Keplerian orbits (develop branch)
+
+can be fed into HMC-NUTS
 
 ## Installation
 
@@ -10,4 +12,4 @@ modeling non-Keplerian dynamics using jax (develop branch)
 
 ## Examples
 
-see notebooks in tests
+see notebooks in examples

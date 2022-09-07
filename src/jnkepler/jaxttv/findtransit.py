@@ -10,6 +10,7 @@ from jax import jit, vmap, grad
 from jax.lax import scan
 from functools import partial
 from .conversion import cm_to_astrocentric, xvjac_to_xvacm, jacobi_to_astrocentric, BIG_G
+from .symplectic import kepler_step_map, kick_kepler_map
 from .hermite4 import hermite4_step_map
 from .utils import findidx_map, get_energy_map
 from jax.config import config
@@ -74,13 +75,12 @@ def find_transit_times_single(t, x, v, a, j, masses, nitr=5):
 
 
 """ Newton-Raphson method w/o for loop """
-def get_tcflag(t, xjac, vjac):
+def get_tcflag(xjac, vjac):
     """ find times just after the transit centers using *Jacobi* coordinates
 
         Args:
-            t: times (Nstep,)
-            xjac: jacobi positions (Nstep,Norbit,xyz)
-            vjac: jacobi velocities (Nstep,Norbit,xyz)
+            xjac: jacobi positions (Nstep, Norbit, xyz)
+            vjac: jacobi velocities (Nstep, Norbit, xyz)
 
         Returns:
             tcflag: True if the time is just after the transit center (Nstep-1,)
@@ -89,6 +89,13 @@ def get_tcflag(t, xjac, vjac):
     g = jnp.sum(xjac[:,:,:2] * vjac[:,:,:2], axis=2) # Nstep, Norbit
     tcflag = (g[:-1] < 0) & (g[1:] > 0) & (xjac[1:,:,2] > 0)
     return tcflag
+
+
+def get_g_map(xjac, vjac, pidxarr):
+    def g_orbit(xjac, vjac, j):
+        return jnp.sum(xjac[j,:2] * vjac[j,:2])
+    g_map = vmap(g_orbit, (0,0,0), 0)
+    return g_map(xjac, vjac, pidxarr).ravel()
 
 
 def find_tc_idx(t, tcflag, j, tcobs):
@@ -151,16 +158,21 @@ def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
 
         Returns:
             transit times (1D flattened array)
-            total energies around transit times
 
     """
     xjac, vjac = xvjac[:,0,:,:], xvjac[:,1,:,:]
-    tcflag = get_tcflag(t, xjac, vjac)
+    tcflag = get_tcflag(xjac, vjac)
     tcidx = find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
 
     tc = t[1:][tcidx]
     xvjac_init = xvjac[1:][tcidx]
-    xcm_init, vcm_init, acm_init = xvjac_to_xvacm(xvjac_init, masses)
+
+    # bring back the system by dt/2 so that the systems are at conclusions of the symplectic step
+    dt_correct = -0.5 * jnp.diff(t)[0]
+    tc += dt_correct
+    xjac_init, vjac_init = kepler_step_map(xvjac_init[:,0,:,:], xvjac_init[:,1,:,:], masses, dt_correct)
+
+    xcm_init, vcm_init, acm_init = xvjac_to_xvacm(xjac_init, vjac_init, masses)
     nrstep_init = get_nrstep_map(xcm_init, vcm_init, acm_init, pidxarr)
 
     def tcstep(xvs, i):
@@ -175,9 +187,7 @@ def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
     _, steps = scan(tcstep, [xcm_init, vcm_init, nrstep_init], jnp.arange(nitr))
     tc += nrstep_init + jnp.sum(steps, axis=0)
 
-    etot = get_energy_map(xcm_init, vcm_init, masses) # total energies around transit times
-
-    return tc, etot
+    return tc
 
 
 """ TTVFast algorithm """
@@ -261,6 +271,7 @@ find_transit_times_kepler_map = vmap(find_transit_times_kepler, (0,0,0,None,None
 
 def find_transit_times_kepler_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=3):
     """ find transit times for all planets via interpolation
+    NOTE: This still fails for large dt for reason yet to be understood.
 
         Args:
             pidxarr: array of orbit index starting from 0 (Ntransit,)
@@ -275,25 +286,41 @@ def find_transit_times_kepler_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=3):
 
     """
     xjac, vjac = xvjac[:,0,:,:], xvjac[:,1,:,:]
-    tcflag = get_tcflag(t, xjac, vjac)
+    tcflag = get_tcflag(xjac, vjac)
     tcidx = find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
 
     tc_ahead, tc_behind = t[1:][tcidx], t[1:][tcidx-1]
     xvjac_ahead, xvjac_behind = xvjac[1:][tcidx], xvjac[1:][tcidx-1]
 
-    xast_ahead, vast_ahead = jacobi_to_astrocentric(xvjac_ahead[:,0,:,:], xvjac_ahead[:,1,:,:], masses)
-    xast_behind, vast_behind = jacobi_to_astrocentric(xvjac_behind[:,0,:,:], xvjac_behind[:,1,:,:], masses)
+    # bring back the system by dt/2 so that the systems are at conclusions of the symplectic step
+    # if the transit is not bracketed after this shift, advance the system by dt again
+    dt = jnp.diff(t)[0]
+    dt2 = 0.5 * dt
+    xjac_ahead_mindt2, vjac_ahead_mindt2 = kepler_step_map(xvjac_ahead[:,0,:,:], xvjac_ahead[:,1,:,:], masses, -dt2)
+    xjac_behind_mindt2, vjac_behind_mindt2 = kepler_step_map(xvjac_behind[:,0,:,:], xvjac_behind[:,1,:,:], masses, -dt2)
+    xjac_ahead_plusdt2, vjac_ahead_plusdt2 = kick_kepler_map(xvjac_ahead[:,0,:,:], xvjac_ahead[:,1,:,:], masses, dt2)
+    tcflag_mindt2 = get_g_map(xjac_ahead_mindt2, vjac_ahead_mindt2, pidxarr) > 0. # True if still bracketing the transit
+    func = lambda x, y, z: jnp.where(x, y, z)
+    func_map = vmap(func, (0,0,0), 0)
+    xjac_ahead = func_map(tcflag_mindt2, xjac_ahead_mindt2, xjac_ahead_plusdt2)
+    xjac_behind = func_map(tcflag_mindt2, xjac_behind_mindt2, xjac_ahead_mindt2)
+    vjac_ahead = func_map(tcflag_mindt2, vjac_ahead_mindt2, vjac_ahead_plusdt2)
+    vjac_behind = func_map(tcflag_mindt2, vjac_behind_mindt2, vjac_ahead_mindt2)
+    tc_ahead = jnp.where(tcflag_mindt2, tc_ahead - dt2, tc_ahead + dt2)
+    tc_behind = jnp.where(tcflag_mindt2, tc_behind - dt2, tc_behind + dt2)
+
+    xast_ahead, vast_ahead = jacobi_to_astrocentric(xjac_ahead, vjac_ahead, masses)
+    xast_behind, vast_behind = jacobi_to_astrocentric(xjac_behind, vjac_behind, masses)
 
     kast = BIG_G * (masses[1:] + masses[0])
     kastarr = kast[pidxarr]
 
-    dt = jnp.diff(t)[0]
     tau_ahead = tc_ahead + jnp.diag(find_transit_times_kepler_map(xast_ahead, vast_ahead, kastarr, -dt, nitr)[:,pidxarr])
     tau_behind = tc_behind + jnp.diag(find_transit_times_kepler_map(xast_behind, vast_behind, kastarr, dt, nitr)[:,pidxarr])
 
     tc = ( (tau_behind - tc_behind) * tau_ahead + (tc_ahead - tau_ahead) * tau_behind ) / (dt + tau_behind - tau_ahead)
 
-    return tc, None
+    return tc
 
 """ Newton-Raphson method w/ for loop """
 '''

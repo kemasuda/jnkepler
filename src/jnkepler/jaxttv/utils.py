@@ -1,5 +1,5 @@
 __all__ = [
-    "initialize_jacobi_xv", "get_energy_map", "get_energy_diff", "get_energy_diff_jac",
+    "initialize_jacobi_xv", "get_energy_diff", "get_energy_diff_jac",
     "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map"
 ]
 
@@ -81,6 +81,7 @@ def get_energy_diff(xva, masses):
     return etot[1]/etot[0] - 1.
 
 
+'''
 @jit
 def get_energy_diff_jac(xvjac, masses):
     """ compute fractional energy change given integration result
@@ -96,6 +97,27 @@ def get_energy_diff_jac(xvjac, masses):
     _xvjac = jnp.array([xvjac[0], xvjac[-1]])
     _xcm, _vcm = xvjac_to_xvcm(_xvjac, masses)
     etot = get_energy_map(_xcm, _vcm, masses)
+    return etot[1]/etot[0] - 1.
+'''
+
+
+from .symplectic import kepler_step_map
+@jit
+def get_energy_diff_jac(xvjac, masses, dt):
+    """ compute fractional energy change given integration result
+
+        Args:
+            xvjac: Jacobi posisions and velocities (Nstep, x or v, Norbit, xyz)
+            masses: masses of the bodies (Nbody,)
+
+        Returns:
+            fractional change in total energy
+
+    """
+    xvjac_ends = jnp.array([xvjac[0], xvjac[-1]])
+    xjac_ends_correct, vjac_ends_correct = kepler_step_map(xvjac_ends[:,0,:,:], xvjac_ends[:,1,:,:], masses, dt)
+    xcm, vcm = xvjac_to_xvcm(xjac_ends_correct, vjac_ends_correct, masses)
+    etot = get_energy_map(xcm, vcm, masses)
     return etot[1]/etot[0] - 1.
 
 
