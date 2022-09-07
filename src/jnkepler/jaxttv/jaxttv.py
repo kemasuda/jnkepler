@@ -440,7 +440,7 @@ def integrate_orbits_hermite(xjac0, vjac0, masses, times):
 
 
 def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
-               tcmodelunclist=None, tmargin=100., save=None,
+               tcmodelunclist=None, tmargin=100., save=None, marker='s',
                unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
     """ plot transit time model
 
@@ -452,6 +452,7 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
             tcmodelunclist: model uncertainty (same format as tcmodellist)
             tmargin: margin in x axis
             save: if not None, plot is saved as "save_planet#.png"
+            marker: marker for model
             unit: TTV unit (defaults to minutes)
             ylabel, xlabel: axis labels in plot
 
@@ -469,7 +470,7 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
                      fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
         idxm = tcmodel < np.max(tcobs) + tmargin
         tlin = t0 + tnummodel * p
-        plt.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, 's-', lw=1, mfc='white', color='steelblue',
+        plt.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=1, mfc='white', color='steelblue',
                  zorder=-1000, label='model', alpha=0.9)
         if tcmodelunclist is not None:
             munc = tcmodelunclist[j]
