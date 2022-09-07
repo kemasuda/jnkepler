@@ -91,7 +91,7 @@ class JaxTTV:
             print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
 
     def linear_ephemeris(self):
-        """ (Re)derive linear ephemeris if necessary
+        """ (Re)derive linear ephemeris when necessary
 
             Returns:
                 array of t0, array of P from linear fitting
@@ -155,8 +155,6 @@ class JaxTTV:
                 fractional energy change
 
         """
-        #if t_start is not None:
-        #    times, t0 = jnp.arange(t_start, t_end, dt), t_start
         if (t_start is None) or (t_end is None) or (dt is None):
             times, t0, dt = self.times, self.t_start, self.dt
         else:
@@ -180,7 +178,7 @@ class JaxTTV:
         return tcarr, de_frac
 
     def quicklook(self, model, sigma=None, save=None):
-        """ plot observed and model TTVs
+        """ plot observed and model TTVs (may be obsolete given plot_model)
 
             Args:
                 model: model transit times (1D flattened)
