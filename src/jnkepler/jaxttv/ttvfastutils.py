@@ -1,4 +1,3 @@
-
 __all__ = ["params_for_ttvfast", "get_ttvfast_model"]
 
 import numpy as np
