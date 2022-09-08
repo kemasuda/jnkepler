@@ -1,4 +1,4 @@
-__all__ = ["JaxTTV", "plot_model"]
+__all__ = ["JaxTTV", "plot_model", "get_means_and_stds"]
 
 #%%
 import numpy as np
@@ -63,9 +63,9 @@ class JaxTTV:
         pidx, tcobs_linear, ttvamp = np.array([]), np.array([]), np.array([])
         for j in range(len(tcobs)):
             tc = tcobs[j]
-            if len(tc)==0:
+            if len(tc) == 0: # at the moment non-transiting planets are not supported
                 continue
-            elif len(tc)==1:
+            elif len(tc) == 1:
                 pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
                 tc_linear = tc[0]
                 tcobs_linear = np.r_[tcobs_linear, tc_linear]
@@ -102,7 +102,11 @@ class JaxTTV:
         for j in range(self.nplanet):
             tc = self.tcobs[j]
             m = np.round((tc - tc[0]) / self.p_init[j])
-            pfit, t0fit = np.polyfit(m, tc, deg=1)
+            if len(tc) > 1:
+                pfit, t0fit = np.polyfit(m, tc, deg=1)
+            else:
+                pfit, t0fit = self.p_init[j], self.tcobs_linear[j]
+                print ("# ephemeris of planet %d was not updated."%(j+1))
             t0_new.append(t0fit)
             p_new.append(pfit)
 
@@ -135,7 +139,7 @@ class JaxTTV:
         return transit_times, ediff
 
     def get_ttvs_nodata(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,
-        nitr_transit=5, nitr_kepler=3, symplectic=True):
+        nitr_transit=5, nitr_kepler=3, symplectic=True, truncate=True):
         """ compute all model transit times between t_start and t_end
         This function is slower than get_ttvs and should not be used for fitting.
 
@@ -170,8 +174,16 @@ class JaxTTV:
 
         tcarr = []
         for pidx in range(1, len(masses)):
-            tc = find_transit_times_single(t, xcm, vcm, acm, pidx, masses, nitr=nitr_transit)
+            tc = np.array(find_transit_times_single(t, xcm, vcm, acm, pidx, masses, nitr=nitr_transit))
+            if truncate:
+                t0lin, plin = self.tcobs_linear[pidx-1], self.p_init[pidx-1]
+                epoch = np.round((tc - t0lin) / plin).astype(int)
+                epochobs = np.round((self.tcobs[pidx-1] - t0lin) / plin).astype(int)
+                emin, emax = np.min(epochobs), np.max(epochobs)
+                idx = (emin <= epoch) & (epoch <= emax)
+                tc = tc[idx]
             tcarr.append(tc)
+
         if flatten:
             tcarr = np.hstack(tcarr)
 
@@ -274,8 +286,10 @@ class JaxTTV:
         tc2, de2 = self.get_ttvs_nodata(elements, masses, t_start=self.t_start, t_end=self.t_end, dt=dtcheck,
                                         flatten=True, nitr_transit=nitr_transit, nitr_kepler=nitr_kepler, symplectic=symplectic)
         intname = 'symplectic' if symplectic else 'Hermite4'
-        tc2 = tc2[np.array(findidx_map(tc2, tc))]
         print ("# fractional energy error (%s, dt=%.2e): %.2e" % (intname, dtcheck, de2))
+
+        tc, tc2 = np.array(tc), np.array(tc2)
+        tc2 = tc2[np.array(findidx_map(tc2, tc))]
         maxdiff = np.max(np.abs(tc-tc2))
         print ("# max difference in tc: %.2e days (%.2f sec)"%(maxdiff, maxdiff*86400))
 
@@ -359,7 +373,7 @@ class JaxTTV:
             t0_lin, p_lin = self.linear_ephemeris()
             elements, masses = params_to_elements(pfinal, self.nplanet)
             tcall, _ = self.get_ttvs_nodata(elements, masses)
-            plot_model(tcall, self.tcobs, self.errorobs, t0_lin, p_lin, save=save)
+            plot_model(tcall, self.tcobs, self.errorobs, t0_lin, p_lin, marker='.', save=save)
 
         return pfinal
 
@@ -380,10 +394,11 @@ class JaxTTV:
         for idx in sample_indices:
             elements, masses = samples['elements'][idx], samples['masses'][idx]
             models.append(self.get_ttvs_nodata(elements, masses)[0])
-        for j in range(self.nplanet):
-            models_j = np.array([models[s][j] for s in range(len(sample_indices))])
-            means.append(np.mean(models_j, axis=0))
-            stds.append(np.std(models_j, axis=0))
+        #for j in range(self.nplanet):
+        #    models_j = np.array([models[s][j] for s in range(len(sample_indices))])
+        #    means.append(np.mean(models_j, axis=0))
+        #    stds.append(np.std(models_j, axis=0))
+        means, stds = get_means_and_stds(models)
         return means, stds
 
 
@@ -440,7 +455,7 @@ def integrate_orbits_hermite(xjac0, vjac0, masses, times):
 
 
 def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
-               tcmodelunclist=None, tmargin=100., save=None, marker='s',
+               tcmodelunclist=None, tmargin=None, save=None, marker=None,
                unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
     """ plot transit time model
 
@@ -461,14 +476,16 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
         tcmodel, tcobs, errorobs = np.array(tcmodel), np.array(tcobs), np.array(errorobs)
 
         plt.figure(figsize=(8,5))
-        plt.xlim(np.min(tcobs)-tmargin, np.max(tcobs)+tmargin)
+        if tmargin is not None:
+            plt.xlim(np.min(tcobs)-tmargin, np.max(tcobs)+tmargin)
         plt.ylabel(ylabel)
         plt.xlabel(xlabel)
         tnumobs = np.round((tcobs - t0)/p).astype(int)
         tnummodel = np.round((tcmodel - t0)/p).astype(int)
         plt.errorbar(tcobs, (tcobs-t0-tnumobs*p)*unit, yerr=errorobs*unit, zorder=1000,
                      fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
-        idxm = tcmodel < np.max(tcobs) + tmargin
+        #idxm = tcmodel < np.max(tcobs) + tmargin
+        idxm = tcmodel > 0
         tlin = t0 + tnummodel * p
         plt.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=1, mfc='white', color='steelblue',
                  zorder=-1000, label='model', alpha=0.9)
@@ -487,3 +504,12 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
 
         if save is not None:
             plt.savefig(save+"_planet%d.png"%(j+1), dpi=200, bbox_inches="tight")
+
+
+def get_means_and_stds(models):
+    means, stds = [], []
+    for j in range(np.shape(models)[1]):
+        models_j = np.array([models[s][j] for s in range(len(models))])
+        means.append(np.mean(models_j, axis=0))
+        stds.append(np.std(models_j, axis=0))
+    return means, stds
