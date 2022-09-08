@@ -153,6 +153,7 @@ class JaxTTV:
                 nitr_transit: # of iterations in transit-search loop
                 nitr_kepler: # of iterations in Kepler step (for symplectic only)
                 symplectic: if True use symplectic; otherwise Hermite4 (needs smaller dt in general)
+                truncate: if True, model transit times are truncated to fit inside the observing window of each planet
 
             Returns:
                 list or 1D array (flatten=True) of model transit times
@@ -174,7 +175,7 @@ class JaxTTV:
 
         tcarr = []
         for pidx in range(1, len(masses)):
-            tc = np.array(find_transit_times_single(t, xcm, vcm, acm, pidx, masses, nitr=nitr_transit))
+            tc = find_transit_times_single(t, xcm, vcm, acm, pidx, masses, nitr=nitr_transit)
             if truncate:
                 t0lin, plin = self.tcobs_linear[pidx-1], self.p_init[pidx-1]
                 epoch = np.round((tc - t0lin) / plin).astype(int)
@@ -394,10 +395,6 @@ class JaxTTV:
         for idx in sample_indices:
             elements, masses = samples['elements'][idx], samples['masses'][idx]
             models.append(self.get_ttvs_nodata(elements, masses)[0])
-        #for j in range(self.nplanet):
-        #    models_j = np.array([models[s][j] for s in range(len(sample_indices))])
-        #    means.append(np.mean(models_j, axis=0))
-        #    stds.append(np.std(models_j, axis=0))
         means, stds = get_means_and_stds(models)
         return means, stds
 
@@ -507,6 +504,15 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
 
 
 def get_means_and_stds(models):
+    """ get mean and standard deviation of the models
+
+        Args:
+            models: transit time models, (# of samples, # of planets, # of transits)
+
+        Returns:
+            means: mean of the models (# of planets, # of transits)
+
+    """
     means, stds = [], []
     for j in range(np.shape(models)[1]):
         models_j = np.array([models[s][j] for s in range(len(models))])
