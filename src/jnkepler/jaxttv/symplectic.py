@@ -83,7 +83,7 @@ def kepler_step(x, v, gm, dt, nitr=3):
 
 
 def Hint(x, v, masses):
-    """ interaction Hamiltonian devided by Gm_0m_0
+    """ interaction Hamiltonian divided by Gm_0m_0
 
         Args:
             x: positions (Norbit, xyz)
@@ -94,7 +94,6 @@ def Hint(x, v, masses):
             value of interaction Hamiltonian
 
     """
-
     mu = masses[1:] / masses[0]
 
     ri = jnp.sqrt(jnp.sum(x * x, axis=1))
@@ -227,7 +226,7 @@ def kick_kepler_map(xjac, vjac, masses, dt, nitr=3):
 def compute_corrector_coefficientsTO():
     """ coefficients for the third-order corrector """
     corr_alpha = jnp.sqrt(7./40.)
-    corr_beta = 1./(48.0*corr_alpha)
+    corr_beta = 1. / (48.0 * corr_alpha)
 
     TOa1, TOa2 = -corr_alpha, corr_alpha
     TOb1, TOb2 = -0.5 * corr_beta, 0.5 * corr_beta
