@@ -36,6 +36,16 @@ def correct_E(E, M, e):
 #%%
 @jit
 def get_E(M, e):
+    """ compute eccentric anomaly given mean anomaly and eccentricity
+
+        Args:
+            M: mean anomaly (should be between -pi and pi)
+            e: eccentricity
+
+        Returns:
+            eccentric anomaly
+
+    """
     alpha = get_alpha(M, e)
     E1 = get_E1(M, e, alpha)
     return correct_E(E1, M, e)
