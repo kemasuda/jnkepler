@@ -1,13 +1,17 @@
 # jnkepler
-JAX code for modeling nearly Keplerian orbits (develop branch)
+JAX code for modeling nearly Keplerian orbits.
 
-can be fed into HMC-NUTS
+- jaxttv: a differentialble TTV model, can be used with the No-U-Turn sampler (NUTS) in numpyro
+
+
 
 ## Installation
 
 ```python setup.py install```
 
 * requirements: jax, numpyro, ...
+
+  
 
 
 ## Examples
