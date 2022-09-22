@@ -19,7 +19,7 @@ config.update('jax_enable_x64', True)
 from .transit import *
 from ..nbodyrv.rv import *
 class NbodyTransit(JaxTTV):
-    """ main class for the photodynamical analysis """
+    """ main class for photodynamical analysis """
     def set_lcobs(self, times_lc, overlapping_transit=False, exposure_time=29.4/1440., supersample_factor=10, print_info=True):
         """ initialization
 
@@ -85,7 +85,7 @@ class NbodyTransit(JaxTTV):
         xsky_tc, vsky_tc = get_xvast_map(xcm, vcm, pidxarr)
 
         if self.overlapping_transit:
-            nbodyflux_ss = compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx) * 0
+            nbodyflux_ss = compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
         else:
             nbodyflux_ss = compute_nbody_flux_nooverlap(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx_nool, self.times_planet_idx_nool)
 
@@ -119,7 +119,7 @@ class NbodyTransit(JaxTTV):
         xsky_tc, vsky_tc = get_xvast_map(xcm, vcm, pidxarr)
 
         if self.overlapping_transit:
-            nbodyflux_ss = compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx) * 0
+            nbodyflux_ss = compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
         else:
             nbodyflux_ss = compute_nbody_flux_nooverlap(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx_nool, self.times_planet_idx_nool)
 

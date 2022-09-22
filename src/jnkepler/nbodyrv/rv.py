@@ -22,14 +22,3 @@ def rv_from_xvjac(times_rv, times, xvjac, masses):
     xast, vast = jacobi_to_astrocentric(xvjac[:,0,:,:], xvjac[:,1,:,:], masses)
     xcm, vcm = a2cm_map(xast, vast, masses)
     return - jnp.interp(times_rv, times, vcm[:,0,2]) * au_per_day
-
-
-class NbodyRV:
-    """ class for the RV-only analysis """
-    def __init__(self):
-        pass
-
-    def get_rv(self, times_rv, elements, masses):
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
-        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
-        return rv_from_xvjac(times_rv, times, xvjac, masses)

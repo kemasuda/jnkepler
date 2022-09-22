@@ -1,6 +1,6 @@
-__all__ = ["JaxTTV", "plot_model", "get_means_and_stds"]
+__all__ = ["Nbody", "JaxTTV", "plot_model", "get_means_and_stds"]
 
-#%%
+
 import numpy as np
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
@@ -14,8 +14,27 @@ from jax import jit, grad
 from jax.config import config
 config.update('jax_enable_x64', True)
 
-#%%
-class JaxTTV:
+
+class Nbody:
+    """ superclass for nbody analysis """
+    def __init__(self, t_start, t_end, dt, nitr_kepler=3):
+        """ initialization
+
+            Args:
+                t_start: start time of integration
+                t_end: end time of integration
+                dt: integration time step (day)
+                nitr_kepler: number of iterations in Kepler steps
+
+        """
+        self.t_start = t_start
+        self.t_end = t_end
+        self.dt = dt
+        self.times = jnp.arange(t_start, t_end, dt)
+        self.nitr_kepler = nitr_kepler
+
+
+class JaxTTV(Nbody):
     """ main class for TTV analysis """
     def __init__(self, t_start, t_end, dt, nitr_kepler=3, transit_time_method='newton-raphson', nitr_transit=5):
         """ initialization
@@ -29,6 +48,10 @@ class JaxTTV:
                 nitr_transit: number of iterations in transit-finding loop (only for Newton-Raphson)
 
         """
+        super(JaxTTV, self).__init__(t_start, t_end, dt, nitr_kepler=nitr_kepler)
+        self.transit_time_method = transit_time_method
+        self.nitr_transit = nitr_transit
+        """
         self.t_start = t_start
         self.t_end = t_end
         self.dt = dt
@@ -36,6 +59,8 @@ class JaxTTV:
         self.nitr_kepler = nitr_kepler
         self.transit_time_method = transit_time_method
         self.nitr_transit = nitr_transit
+        """
+
 
     def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
         """ set observed transit times
