@@ -17,7 +17,7 @@ config.update('jax_enable_x64', True)
 
 #%%
 from .transit import *
-from ..nbodyrv.nbodyrv import *
+from ..nbodyrv.rv import *
 class NbodyTransit(JaxTTV):
     """ main class for the photodynamical analysis """
     def set_lcobs(self, times_lc, overlapping_transit=False, exposure_time=29.4/1440., supersample_factor=10, print_info=True):
@@ -93,7 +93,7 @@ class NbodyTransit(JaxTTV):
 
         return nbodyflux, tc
 
-    @partial(jit, static_argnums=(0,1,))
+    @partial(jit, static_argnums=(0,))
     def get_lc_and_rv(self, times_rv, elements, masses, rstar, prad, u1, u2):
         """ compute nbody flux and RV
 
