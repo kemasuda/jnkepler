@@ -8,3 +8,5 @@ __license__ = "MIT"
 __description__ = "modeling non-keplerian dynamics with jax"
 
 from . import jaxttv
+from . import nbodytransit
+from . import nbodyrv
