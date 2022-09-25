@@ -45,7 +45,7 @@ class NbodyTransit(JaxTTV):
         times_transit_idx, times_planet_idx = [], []
         for j in range(self.nplanet):
             tcj = np.where(self.pidx==j+1, self.tcobs_flatten, -np.inf)
-            _tidx = findidx_map(tcj, times_lc)
+            _tidx = findidx_map(tcj, self.times_super)
             _pidx = jnp.ones_like(_tidx) * j
             times_transit_idx.append(_tidx)
             times_planet_idx.append(_pidx)
@@ -60,6 +60,29 @@ class NbodyTransit(JaxTTV):
             print ("# supersampling factor:".ljust(35) + "%d"%(self.supersample_num-1))
             if not self.overlapping_transit:
                 print ("# overlapping transit ignored.".ljust(35))
+
+    def get_xvsky_tc(self, elements, masses):
+        """ compute nbody flux
+
+            Args:
+                elements: orbital elements in JaxTTV format
+                masses: masses of the bodies (in units of solar mass)
+                rstar: stellar radius (in units of solar radius)
+                prad: planet-to-star radius ratio (Norbit,)
+                u1, u2: quadratic limb-darkening coefficients
+
+            Returns:
+                nbodyflux: transit light curve (len(times_lc),)
+                tc: transit times (1D flattened array)
+
+        """
+        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
+        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
+        pidxarr = self.pidx.astype(int) # idx for planet, starting from 1
+        tcobs1d = self.tcobs_flatten
+        tc, (xcm, vcm, _) = find_transit_params_all(pidxarr-1, tcobs1d, times, xvjac, masses)
+        xsky_tc, vsky_tc = get_xvast_map(xcm, vcm, pidxarr)
+        return xsky_tc, vsky_tc
 
     @partial(jit, static_argnums=(0,))
     def get_lc(self, elements, masses, rstar, prad, u1, u2):
