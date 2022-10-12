@@ -1,7 +1,7 @@
 # jnkepler
-JAX code for modeling nearly Keplerian orbits.
+[JAX](https://jax.readthedocs.io/en/latest/index.html) code for modeling nearly Keplerian orbits. Compatible with the No-U-Turn sampler (NUTS) in [NumPyro](https://num.pyro.ai).
 
-- jaxttv: a differentialble TTV model, can be used with the No-U-Turn sampler (NUTS) in numpyro
+- jnkepler.jaxttv: a differentialble model for transit timing variations (TTVs)
 
 
 
@@ -9,9 +9,9 @@ JAX code for modeling nearly Keplerian orbits.
 
 ```python setup.py install```
 
-* requirements: jax, numpyro, ...
+* requirements: jax, numpyro (for NUTS),  [jaxopt](https://jaxopt.github.io/stable/) (for optimization)
 
-  
+
 
 
 ## Examples
