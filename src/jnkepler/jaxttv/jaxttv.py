@@ -10,6 +10,7 @@ from .conversion import *
 from .findtransit import find_transit_times_single, find_transit_times_all, find_transit_times_kepler_all
 from .symplectic import integrate_xv, kepler_step_map
 from .hermite4 import integrate_xv as integrate_xv_hermite4
+from .rv import *
 from jax import jit, grad
 from jax.config import config
 config.update('jax_enable_x64', True)
@@ -162,6 +163,36 @@ class JaxTTV(Nbody):
             transit_times = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
         ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
         return transit_times, ediff
+
+
+    @partial(jit, static_argnums=(0,))
+    def get_ttvs_and_rvs(self, elements, masses, times_rv):
+        """ compute model transit times and stellar RVs
+
+            Args:
+                elements: orbital elements in JaxTTV format
+                masses: masses of the bodies (in units of solar mass)
+                times_rv: times at which stellar RVs are evaluated
+
+            Returns:
+                1D flattened array of transit times
+                1D array of stellar RVs (m/s)
+                fractional energy change
+
+        """
+        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
+        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
+        orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
+        tcobs1d = self.tcobs_flatten # 1D array of observed transit times
+        if self.transit_time_method == 'newton-raphson':
+            transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
+        else:
+            transit_times = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+        ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
+
+        nbodyrv = rv_from_xvjac(times_rv, times, xvjac, masses)
+
+        return transit_times, nbodyrv, ediff
 
     def get_ttvs_nodata(self, elements, masses, t_start=None, t_end=None, dt=None, flatten=False,
         nitr_transit=5, nitr_kepler=3, symplectic=True, truncate=True):

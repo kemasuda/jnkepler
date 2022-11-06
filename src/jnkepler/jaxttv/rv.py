@@ -2,7 +2,7 @@
 __all__ = ["rv_from_xvjac"]
 
 import jax.numpy as jnp
-from ..jaxttv.conversion import jacobi_to_astrocentric, a2cm_map
+from .conversion import jacobi_to_astrocentric, a2cm_map
 au_per_day = 1.495978707e11 / 86400. # m/s
 
 def rv_from_xvjac(times_rv, times, xvjac, masses):
