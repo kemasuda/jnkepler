@@ -19,3 +19,13 @@
 ## Examples
 
 see notebooks in examples
+
+
+
+## Applications
+
+- TOI-1136: TTV modeling of 6-planets in a resonance chain [[paper]](https://ui.adsabs.harvard.edu/abs/2022arXiv221009283D/abstract)
+- TOI-: joint TTV & RV modeling of a potential two-planet system
+
+
+
