@@ -25,7 +25,7 @@ def dEstep(x, ecosE0, esinE0, dM):
             delta(eccentric anomaly) from single iteration
 
     """
-    x2 = x / 2.0
+    x2 = x / 2.0 # x = deltaE
     sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
     sx, cx = 2.0*sx2*cx2, cx2*cx2 - sx2*sx2
     f = x + 2.0*sx2*(sx2*esinE0 - cx2*ecosE0) - dM
