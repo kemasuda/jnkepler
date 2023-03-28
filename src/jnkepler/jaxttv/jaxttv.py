@@ -352,7 +352,7 @@ class JaxTTV(Nbody):
 
         return tc, tc2
 
-    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False):
+    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False, return_init=False):
         """ find maximum-likelihood parameters using scipy.optimize.curve_fit
         Could write a more elaborate function separately.
 
@@ -390,6 +390,9 @@ class JaxTTV(Nbody):
         bounds = (params_lower, params_upper)
         if pinit is None:
             pinit = 0.5 * (params_lower + params_upper)
+
+        if return_init:
+            return pinit
 
         def getmodel(params):
             elements, masses = params_to_elements(params, npl)

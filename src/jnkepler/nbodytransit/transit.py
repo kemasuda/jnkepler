@@ -60,14 +60,14 @@ def compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, times, times_t
             times_planet_idx: indices of planets (Nplanet, Ntime)
 
         Returns:
-            relative flux
+            relative flux loss
 
     """
     xsky_au = xsky_tc[times_transit_idx] + vsky_tc[times_transit_idx] * (times - tc[times_transit_idx])[:,:,None]
     barr_au = jnp.sqrt(jnp.sum(xsky_au**2, axis=2))
     barr = barr_au / (rsun_au * rstar)
     rarr = prad[times_planet_idx]
-    return 1. + jnp.sum(compute_relative_flux_loss(barr, rarr, u1, u2), axis=0)
+    return jnp.sum(compute_relative_flux_loss(barr, rarr, u1, u2), axis=0)
 
 
 def compute_nbody_flux_nooverlap(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, times, times_transit_idx, times_planet_idx):
@@ -86,11 +86,11 @@ def compute_nbody_flux_nooverlap(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, time
             times_planet_idx: indices of planets (Ntime,)
 
         Returns:
-            relative flux
+            relative flux loss
 
     """
     xsky_au = xsky_tc[times_transit_idx] + vsky_tc[times_transit_idx] * (times - tc[times_transit_idx])[:,None]
     barr_au = jnp.sqrt(jnp.sum(xsky_au**2, axis=1))
     barr = barr_au / (rsun_au * rstar)
     rarr = prad[times_planet_idx]
-    return 1. + compute_relative_flux_loss(barr, rarr, u1, u2)
+    return compute_relative_flux_loss(barr, rarr, u1, u2)

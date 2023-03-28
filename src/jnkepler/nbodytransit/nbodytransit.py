@@ -62,18 +62,16 @@ class NbodyTransit(JaxTTV):
                 print ("# overlapping transit ignored.".ljust(35))
 
     def get_xvsky_tc(self, elements, masses):
-        """ compute nbody flux
+        """ compute sky-plane positions and velocities at transit centers
 
             Args:
                 elements: orbital elements in JaxTTV format
                 masses: masses of the bodies (in units of solar mass)
-                rstar: stellar radius (in units of solar radius)
-                prad: planet-to-star radius ratio (Norbit,)
-                u1, u2: quadratic limb-darkening coefficients
 
             Returns:
-                nbodyflux: transit light curve (len(times_lc),)
-                tc: transit times (1D flattened array)
+                tc: transit centers (Ntransit)
+                xsky_tc: astrocentric positions in the sky plane at transit centers (Ntransit, xy)
+                vsky_tc: astrocentric velocities in the sky plane at transit centers (Ntransit, xy)
 
         """
         xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
@@ -82,7 +80,7 @@ class NbodyTransit(JaxTTV):
         tcobs1d = self.tcobs_flatten
         tc, (xcm, vcm, _) = find_transit_params_all(pidxarr-1, tcobs1d, times, xvjac, masses)
         xsky_tc, vsky_tc = get_xvast_map(xcm, vcm, pidxarr)
-        return xsky_tc, vsky_tc
+        return tc, xsky_tc, vsky_tc
 
     @partial(jit, static_argnums=(0,))
     def get_lc(self, elements, masses, rstar, prad, u1, u2):
@@ -100,12 +98,16 @@ class NbodyTransit(JaxTTV):
                 tc: transit times (1D flattened array)
 
         """
+
+        """
         xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
         pidxarr = self.pidx.astype(int) # idx for planet, starting from 1
         tcobs1d = self.tcobs_flatten
         tc, (xcm, vcm, _) = find_transit_params_all(pidxarr-1, tcobs1d, times, xvjac, masses)
         xsky_tc, vsky_tc = get_xvast_map(xcm, vcm, pidxarr)
+        """
+        tc, xsky_tc, vsky_tc = self.get_xvsky_tc(elements, masses)
 
         if self.overlapping_transit:
             nbodyflux_ss = compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
@@ -134,12 +136,16 @@ class NbodyTransit(JaxTTV):
                 nbodyrv: stellar RVs at times_rvs (m/s), positive when the star is moving away
 
         """
+
+        """
         xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
         pidxarr = self.pidx.astype(int) # idx for planet, starting from 1
         tcobs1d = self.tcobs_flatten
         tc, (xcm, vcm, _) = find_transit_params_all(pidxarr-1, tcobs1d, times, xvjac, masses)
         xsky_tc, vsky_tc = get_xvast_map(xcm, vcm, pidxarr)
+        """
+        tc, xsky_tc, vsky_tc = self.get_xvsky_tc(elements, masses)
 
         if self.overlapping_transit:
             nbodyflux_ss = compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
@@ -258,7 +264,8 @@ def b_to_cosi(b, period, ecosw, esinw, rstar, mstar=1.):
             cosine of inclination
 
     """
-    a_over_r = 3.7528 * period**(2./3.) / rstar * mstar**(1./3.)
+    #a_over_r = 3.7528 * period**(2./3.) / rho**(1./3.) # rho in g/cm^3
+    a_over_r = 4.2083 * period**(2./3.) / rstar * mstar**(1./3.) # adopting G, M_sun, R_sun from astropy.constants
     efactor = (1. - ecosw**2 - esinw**2) / (1. + esinw)
     return b / a_over_r / efactor
 
