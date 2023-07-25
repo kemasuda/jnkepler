@@ -24,9 +24,10 @@ def reduce_angle(M):
             angle mapped to [-pi, pi)
 
     """
-    Mmod = M % (2*jnp.pi)
-    Mred = jnp.where(Mmod >= jnp.pi, Mmod-2*jnp.pi, Mmod)
-    return Mred
+    return (M + jnp.pi) % (2 * jnp.pi) - jnp.pi
+    #Mmod = M % (2*jnp.pi)
+    #Mred = jnp.where(Mmod >= jnp.pi, Mmod-2*jnp.pi, Mmod)
+    #return Mred
 
 
 def tic_to_u(tic, period, ecc, omega, t_epoch):
