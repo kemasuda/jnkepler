@@ -59,6 +59,9 @@ def test_reproduce():
     assert maxdiff_grad < 1e-4
     print ("# fractional difference in grad(elements):", fracdiff_grad)
 
+    de_true = float(pd.read_csv(glob.glob(path+"%s*de.csv"%pltag)[0]).de)
+    assert de == pytest.approx(de_true)
+
 #%%
 if __name__ == '__main__':
     test_reproduce()
