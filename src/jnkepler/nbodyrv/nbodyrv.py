@@ -2,7 +2,7 @@
 __all__ = ["NbodyRV"]
 
 from ..jaxttv import Nbody
-from .rv import *
+from ..jaxttv.rv import *
 
 
 class NbodyRV(Nbody):

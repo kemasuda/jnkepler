@@ -17,7 +17,7 @@ config.update('jax_enable_x64', True)
 
 #%%
 from .transit import *
-from ..nbodyrv.rv import *
+from ..jaxttv.rv import *
 class NbodyTransit(JaxTTV):
     """ main class for photodynamical analysis """
     def set_lcobs(self, times_lc, overlapping_transit=False, exposure_time=29.4/1440., supersample_factor=10, print_info=True):
