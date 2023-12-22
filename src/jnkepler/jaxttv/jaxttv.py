@@ -279,6 +279,7 @@ class JaxTTV(Nbody):
             if save is not None:
                 plt.savefig(save+"%d.png"%(j+1), dpi=200, bbox_inches="tight")
 
+    '''
     def check_residuals(self, tc, jitters=None):
         """ plot residuals from a given model
         Compare the histogram of O-C with Gaussians.
@@ -322,6 +323,59 @@ class JaxTTV(Nbody):
             x0 = np.linspace(-5, 5, 100)
             ax[1].plot(x0, np.exp(-0.5*x0**2/sd**2)/np.sqrt(2*np.pi)/sd, lw=1, color='C0', ls='dashed', label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]))
             ax[1].legend(loc='lower right')
+    '''
+    def check_residuals(self, tc, jitters=None, student=True, normalize=True, plot=True):
+        if jitters is not None:
+            jitters = np.atleast_1d(jitters)
+            if len(jitters) == 1:
+                jitters = np.array([jitters[0]] * self.nplanet)
+            else:
+                assert len(jitters) == self.nplanet
+        else:
+            jitters = np.zeros(self.nplanet)
+
+        for j in range(self.nplanet):
+            fig, ax = plt.subplots(1,2,figsize=(16,4))
+            idx = self.pidx==j+1
+            res = self.tcobs_flatten[idx] - tc[idx]
+            err0 = self.errorobs_flatten[idx]
+            err = np.sqrt(err0**2 + jitters[j]**2)
+            y = np.array(res / err)
+            if not normalize:
+                ax[0].errorbar(self.tcobs_flatten[idx], res*1440, yerr=self.errorobs_flatten[idx]*1440, fmt='o', lw=1,
+                                label='SD=%.2e'%np.std(res))
+                ax[0].set_ylabel('residual (min')
+            else:
+                ax[0].errorbar(self.tcobs_flatten[idx], y, yerr=self.errorobs_flatten[idx]/err, fmt='o', lw=1,
+                            label='$\chi^2=%.1f$ (%d data)'%(np.sum(y**2), len(y)))
+                ax[0].set_ylabel('residual / assigned error')
+            ax[0].set_title("planet %d"%(j+1))
+            ax[0].set_xlabel("time (days)")
+            ax[0].legend(loc='best')
+
+            sd = np.std(y)
+            rnds = np.random.randn(int(1e6))
+            ax[1].set_yscale("log")
+            ax[1].hist(y, histtype='step', lw=1, density=True, color='C0')
+            ymin, ymax = ax[1].get_ylim()
+            #ax[1].set_ylim(1e-3, ymax*1.5)
+            ax[1].set_ylim(ymin/10, ymax*1.5)
+            ax[1].set_title("planet %d"%(j+1))
+            ax[1].set_xlabel("residual / assigned error")
+            ax[1].set_ylabel('frequency (normalized)')
+            x0 = np.linspace(-5, 5, 100)
+            ax[1].plot(x0, np.exp(-0.5*x0**2/sd**2)/np.sqrt(2*np.pi)/sd, lw=1, color='C0', ls='dashed', label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]))
+            ax[1].legend(loc='lower right')
+
+        if not student:
+            return None
+
+        # Student's t fit
+        res = self.tcobs_flatten - tc
+        y = np.array(res / self.errorobs_flatten)
+        lnvar, lndf = fit_t_distribution(y, plot=plot)
+
+        return np.mean(res), np.std(res), lnvar, lndf
 
     def check_timing_precision(self, params, dtfrac=1e-3, nitr_transit=10, nitr_kepler=10, symplectic=False):
         """ compare get_ttvs outputs with those from get_ttvs_nodata with a smaller timestep
@@ -602,3 +656,63 @@ def get_means_and_stds(models):
         means.append(np.mean(models_j, axis=0))
         stds.append(np.std(models_j, axis=0))
     return means, stds
+
+
+def fit_t_distribution(y, plot=True):
+    from scipy.stats import t as tdist
+    from scipy.stats import norm
+    import numpyro
+    import numpyro.distributions as dist
+    import jax.random as random
+
+    def model(y):
+        logdf = numpyro.sample("lndf", dist.Uniform(jnp.log(0.5), jnp.log(100)))
+        logvar = numpyro.sample("lnvar", dist.Uniform(-2, 10))
+        df = numpyro.deterministic("df", jnp.exp(logdf))
+        v1 = numpyro.deterministic("v1", jnp.exp(logvar))
+        numpyro.sample("obs", dist.StudentT(scale=jnp.sqrt(v1), df=df), obs=y)
+
+    kernel = numpyro.infer.NUTS(model)
+    mcmc = numpyro.infer.MCMC(kernel, num_warmup=500, num_samples=500)
+    rng_key = random.PRNGKey(0)
+    mcmc.run(rng_key, y)
+    mcmc.print_summary()
+
+    samples = mcmc.get_samples()
+    lndf, lnvar = np.mean(samples['lndf']), np.mean(samples['lnvar'])
+
+    if plot:
+        sd = np.std(y)
+        fig, ax = plt.subplots(1, 2, figsize=(16,4))
+        ax[1].set_yscale("log")
+        ax[1].set_ylabel("PDF")
+        ax[0].set_ylabel("CDF")
+        ax[0].set_xlabel("residual / assigned error")
+        ax[1].set_xlabel("residual / assigned error")
+        ax[1].hist(y, histtype='step', lw=3, alpha=0.6, density=True, color='gray')
+        ymin, ymax = plt.gca().get_ylim()
+        ax[1].set_ylim(ymin/5., ymax*1.5)
+        x0 = np.linspace(-5, 5, 100)
+        ax[1].plot(x0, norm(scale=sd).pdf(x0), lw=1, color='C0', ls='dashed', 
+                label='normal, $\mathrm{SD}=%.2f$'%sd)
+        ax[1].plot(x0, norm.pdf(x0), lw=1, color='C0', ls='dotted', 
+                label='normal, $\mathrm{SD}=1$')
+        ax[1].plot(x0, tdist(loc=0, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).pdf(x0), 
+        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f)'%(lndf, lnvar))
+        #ax[1].legend(loc='upper right', bbox_to_anchor=(1.5,1))
+
+        #ax[0].hist(y, bins=len(y), histtype='step', lw=3, alpha=0.6, density=True, cumulative=True, color='red')
+        ysum = np.ones_like(y)
+        hist, edge = np.histogram(y, bins=len(y))
+        ax[0].plot(np.r_[x0[0], edge[0], edge[:-1], edge[-1], x0[-1]], 
+                np.r_[0, 0, np.cumsum(hist)/len(y), 1, 1], lw=3, alpha=0.6, color='gray')
+        #ax[0].plot(np.sort(y), np.cumsum(ysum)/len(ysum), lw=3, alpha=0.6, color='gray')
+        ax[0].plot(x0, norm(loc=0, scale=sd).cdf(x0), lw=1, color='C0', ls='dashed', 
+                label='normal, $\mathrm{SD}=%.2f$'%sd)
+        ax[0].plot(x0, norm.cdf(x0), lw=1, color='C0', ls='dotted', 
+                label='normal, $\mathrm{SD}=1$')
+        ax[0].plot(x0, tdist(loc=0, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).cdf(x0), 
+        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f)'%(lndf, lnvar))
+        ax[0].legend(loc='upper left', fontsize=14)
+
+    return lnvar, lndf
