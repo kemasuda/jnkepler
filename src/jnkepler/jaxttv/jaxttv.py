@@ -77,6 +77,7 @@ class JaxTTV(Nbody):
         self.tcobs = tcobs
         self.tcobs_flatten = np.hstack([t for t in tcobs])
         self.nplanet = len(tcobs)
+        self.nplanet_nt = 0
         self.nbody = len(tcobs) + 1
         self.p_init = p_init
         if errorobs is None:
@@ -230,7 +231,7 @@ class JaxTTV(Nbody):
             t, xcm, vcm, acm, de_frac = integrate_orbits_hermite(xjac0, vjac0, masses, times)
 
         tcarr = []
-        for pidx in range(1, len(masses)):
+        for pidx in range(1, len(self.tcobs)+1):
             tc = find_transit_times_single(t, xcm, vcm, acm, pidx, masses, nitr=nitr_transit)
             if truncate:
                 t0lin, plin = self.tcobs_linear[pidx-1], self.p_init[pidx-1]
@@ -335,7 +336,7 @@ class JaxTTV(Nbody):
                 tc2: model transit times using a smaller timestep
 
         """
-        elements, masses = params_to_elements(params, self.nplanet)
+        elements, masses = params_to_elements(params, self.nplanet+self.nplanet_nt)
         tc, de = self.get_ttvs(elements, masses)
         print ("# fractional energy error (symplectic, dt=%.2e): %.2e" % (self.dt,de))
 
@@ -352,7 +353,8 @@ class JaxTTV(Nbody):
 
         return tc, tc2
 
-    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False, return_init=False):
+    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False, return_init=False,
+    nontransiting_planet=None):
         """ find maximum-likelihood parameters using scipy.optimize.curve_fit
         Could write a more elaborate function separately.
 
@@ -375,18 +377,31 @@ class JaxTTV(Nbody):
         import time
 
         npl = self.nplanet
+        if nontransiting_planet is not None:
+            npl_nt = 1
+            self.nplanet_nt = 1
+            m_, p_, ecosw_, esinw_, cosi_, o_, tc_ = nontransiting_planet['mass'], nontransiting_planet['period'], nontransiting_planet['ecosw'], nontransiting_planet['esinw'], nontransiting_planet['cosi'], nontransiting_planet['lnode'], nontransiting_planet['tc']
+        else:
+            npl_nt = 0
 
         params_lower, params_upper, pnames = [], [], []
         for j in range(npl): # need to be changed to take into account non-transiting planets
             params_lower += [self.p_init[j]-dp, -emax, -emax, cosilim[0], olim[0], self.tcobs[j][0]-dtic]
             params_upper += [self.p_init[j]+dp, emax+1e-2, emax+1e-2, cosilim[1], olim[1], self.tcobs[j][0]+dtic]
             pnames += ["p%d"%(j+1), "ec%d"%(j+1), "es%d"%(j+1), "cosi%d"%(j+1), "om%d"%(j+1), "tic%d"%(j+1)]
+        if npl_nt:
+            params_lower += [p_[0], ecosw_[0], esinw_[0], cosi_[0], o_[0], tc_[0]]
+            params_upper += [p_[1], ecosw_[1], esinw_[1], cosi_[1], o_[1], tc_[1]]
+            pnames += ["p%d"%(j+2), "ec%d"%(j+2), "es%d"%(j+2), "cosi%d"%(j+2), "om%d"%(j+2), "tic%d"%(j+2)]
         params_lower += [jnp.log(mmin)] * npl
         params_upper += [jnp.log(mmax)] * npl
-        pnames += ["m%d"%(j+1) for j in range(npl)]
+        if npl_nt:
+            params_lower += [jnp.log(m_[0])]
+            params_upper += [jnp.log(m_[1])]
+        pnames += ["m%d"%(j+1) for j in range(npl+npl_nt)]
+
         params_lower = jnp.array(params_lower).ravel()
         params_upper = jnp.array(params_upper).ravel()
-
         bounds = (params_lower, params_upper)
         if pinit is None:
             pinit = 0.5 * (params_lower + params_upper)
@@ -395,7 +410,7 @@ class JaxTTV(Nbody):
             return pinit
 
         def getmodel(params):
-            elements, masses = params_to_elements(params, npl)
+            elements, masses = params_to_elements(params, npl+npl_nt)
             model = self.get_ttvs(elements, masses)[0]
             return model
 
@@ -428,14 +443,14 @@ class JaxTTV(Nbody):
         print ("# elapsed time (least square): %.1f sec" % (time.time()-start_time))
         pfinal = popt
 
+        elements, masses = params_to_elements(pfinal, npl+npl_nt)
         if plot:
             #self.quicklook(getmodel(pfinal), save=save)
             t0_lin, p_lin = self.linear_ephemeris()
-            elements, masses = params_to_elements(pfinal, self.nplanet)
             tcall, _ = self.get_ttvs_nodata(elements, masses)
             plot_model(tcall, self.tcobs, self.errorobs, t0_lin, p_lin, marker='.', save=save)
 
-        return pfinal
+        return pfinal, elements_to_pdic(elements, masses)
 
     def sample_means_and_stds(self, samples, N=50):
         """ compute mean and standard deviation of transit time models from HMC samples
@@ -531,32 +546,41 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
     for j, (tcmodel, tcobs, errorobs, t0, p) in enumerate(zip(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin)):
         tcmodel, tcobs, errorobs = np.array(tcmodel), np.array(tcobs), np.array(errorobs)
 
-        plt.figure(figsize=(8,5))
+        #plt.figure(figsize=(8,5))
+        fig, (ax, ax2) = plt.subplots(2, 1, figsize=(10,6), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
         if tmargin is not None:
             plt.xlim(np.min(tcobs)-tmargin, np.max(tcobs)+tmargin)
-        plt.ylabel(ylabel)
-        plt.xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax2.set_xlabel(xlabel)
         tnumobs = np.round((tcobs - t0)/p).astype(int)
         tnummodel = np.round((tcmodel - t0)/p).astype(int)
-        plt.errorbar(tcobs, (tcobs-t0-tnumobs*p)*unit, yerr=errorobs*unit, zorder=1000,
+        ax.errorbar(tcobs, (tcobs-t0-tnumobs*p)*unit, yerr=errorobs*unit, zorder=1000,
                      fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
         #idxm = tcmodel < np.max(tcobs) + tmargin
         idxm = tcmodel > 0
         tlin = t0 + tnummodel * p
-        plt.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=1, mfc='white', color='steelblue',
+        ax.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=1, mfc='white', color='steelblue',
                  zorder=-1000, label='model', alpha=0.9)
         if tcmodelunclist is not None:
             munc = tcmodelunclist[j]
-            plt.fill_between(tcmodel[idxm], (tcmodel-munc-tlin)[idxm]*unit,
+            ax.fill_between(tcmodel[idxm], (tcmodel-munc-tlin)[idxm]*unit,
                             (tcmodel+munc-tlin)[idxm]*unit,
                              lw=1, color='steelblue', zorder=-1000, alpha=0.2)
-        plt.title("planet %d"%(j+1))
+        ax.set_title("planet %d"%(j+1))
+
+        idxm = findidx_map(tcmodel, tcobs) 
+        ax2.errorbar(tcobs, (tcobs-tcmodel[idxm])*unit, yerr=errorobs*unit, zorder=1000,
+                     fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
+        ax2.axhline(y=0, color='steelblue', alpha=0.6)
+        ax2.set_ylabel("residual (min)")
 
         # change legend order
-        handles, labels = plt.gca().get_legend_handles_labels()
+        handles, labels = ax.get_legend_handles_labels()
         order = [1,0]
-        plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order],
+        ax.legend([handles[idx] for idx in order],[labels[idx] for idx in order],
                    loc='upper left', bbox_to_anchor=(1,1))
+
+        fig.tight_layout(pad=0.05)
 
         if save is not None:
             plt.savefig(save+"_planet%d.png"%(j+1), dpi=200, bbox_inches="tight")
