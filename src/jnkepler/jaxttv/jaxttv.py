@@ -4,6 +4,7 @@ __all__ = ["Nbody", "JaxTTV", "plot_model", "get_means_and_stds"]
 import numpy as np
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
+import warnings
 from functools import partial
 from .utils import *
 from .conversion import *
@@ -116,6 +117,11 @@ class JaxTTV(Nbody):
             print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(self.tcobs_flatten))
             print ("# integration ends at:".ljust(35) + "%.2f"%self.t_end)
             print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
+            if np.nanmin(p_init)/self.dt < 20.:
+                warnings.warn("time step may be too large.")
+
+        assert self.t_start < np.min(self.tcobs_flatten), "t_start seems too small compared to the first transit time in data."
+        assert np.max(self.tcobs_flatten) < self.t_end, "t_end seems too large compared to the last transit time in data."
 
     def linear_ephemeris(self):
         """ (Re)derive linear ephemeris when necessary
