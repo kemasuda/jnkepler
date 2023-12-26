@@ -678,7 +678,7 @@ def fit_t_distribution(y, plot=True, fit_mean=False):
     import jax.random as random
 
     def model(y):
-        logdf = numpyro.sample("lndf", dist.Uniform(jnp.log(0.5), jnp.log(100)))
+        logdf = numpyro.sample("lndf", dist.Uniform(jnp.log(0.1), jnp.log(100)))
         logvar = numpyro.sample("lnvar", dist.Uniform(-2, 10))
         df = numpyro.deterministic("df", jnp.exp(logdf))
         v1 = numpyro.deterministic("v1", jnp.exp(logvar))
