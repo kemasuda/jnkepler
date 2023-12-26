@@ -64,7 +64,7 @@ class JaxTTV(Nbody):
         """
 
 
-    def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
+    def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True, nplanet_nt=0):
         """ set observed transit times
         JaxTTV returns transit times that are closest to the observed times,
         rather than all the transit times between t_start and t_end
@@ -78,8 +78,8 @@ class JaxTTV(Nbody):
         self.tcobs = tcobs
         self.tcobs_flatten = np.hstack([t for t in tcobs])
         self.nplanet = len(tcobs)
-        self.nplanet_nt = 0
-        self.nbody = len(tcobs) + 1
+        self.nplanet_nt = nplanet_nt
+        self.nbody = len(tcobs) + 1 # not used? may be confusing when nplanet_nt != 0
         self.p_init = p_init
         if errorobs is None:
             self.errorobs = None
@@ -91,7 +91,7 @@ class JaxTTV(Nbody):
         pidx, tcobs_linear, ttvamp = np.array([]), np.array([]), np.array([])
         for j in range(len(tcobs)):
             tc = tcobs[j]
-            if len(tc) == 0: # at the moment non-transiting planets are not supported
+            if len(tc) == 0: 
                 continue
             elif len(tc) == 1:
                 pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
@@ -119,6 +119,9 @@ class JaxTTV(Nbody):
             print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
             if np.nanmin(p_init)/self.dt < 20.:
                 warnings.warn("time step may be too large.")
+            print ()
+            print ("# number of transiting planets:".ljust(35) + "%d"%self.nplanet)
+            print ("# number of non-transiting planets:".ljust(35) + "%d"%self.nplanet_nt)
 
         assert self.t_start < np.min(self.tcobs_flatten), "t_start seems too small compared to the first transit time in data."
         assert np.max(self.tcobs_flatten) < self.t_end, "t_end seems too large compared to the last transit time in data."
@@ -439,8 +442,13 @@ class JaxTTV(Nbody):
         npl = self.nplanet
         if nontransiting_planet is not None:
             npl_nt = 1
-            self.nplanet_nt = 1
-            m_, p_, ecosw_, esinw_, cosi_, o_, tc_ = nontransiting_planet['mass'], nontransiting_planet['period'], nontransiting_planet['ecosw'], nontransiting_planet['esinw'], nontransiting_planet['cosi'], nontransiting_planet['lnode'], nontransiting_planet['tc']
+            if self.nplanet_nt != 1:
+                print ("# number of non-transiting planet set to be 1.")
+                self.nplanet_nt = 1
+            try:
+                m_, p_, ecosw_, esinw_, cosi_, o_, tc_ = nontransiting_planet['mass'], nontransiting_planet['period'], nontransiting_planet['ecosw'], nontransiting_planet['esinw'], nontransiting_planet['cosi'], nontransiting_planet['lnode'], nontransiting_planet['tc']
+            except:
+                print ("# argument 'nontransiting_planet' should be a dictionary containing mass, period, ecosw, esinw, cosi, lnode, and tc.")
         else:
             npl_nt = 0
 
