@@ -333,7 +333,7 @@ class JaxTTV(Nbody):
             ax[1].plot(x0, np.exp(-0.5*x0**2/sd**2)/np.sqrt(2*np.pi)/sd, lw=1, color='C0', ls='dashed', label='$\mathrm{SD}=%.2f$ (jitter: %.1e)'%(sd,jitters[j]))
             ax[1].legend(loc='lower right')
     '''
-    def check_residuals(self, tc, jitters=None, student=True, normalize=True, plot=True):
+    def check_residuals(self, tc, jitters=None, student=True, normalize_residuals=True, plot=True, fit_mean=False):
         if jitters is not None:
             jitters = np.atleast_1d(jitters)
             if len(jitters) == 1:
@@ -350,10 +350,10 @@ class JaxTTV(Nbody):
             err0 = self.errorobs_flatten[idx]
             err = np.sqrt(err0**2 + jitters[j]**2)
             y = np.array(res / err)
-            if not normalize:
+            if not normalize_residuals:
                 ax[0].errorbar(self.tcobs_flatten[idx], res*1440, yerr=self.errorobs_flatten[idx]*1440, fmt='o', lw=1,
                                 label='SD=%.2e'%np.std(res))
-                ax[0].set_ylabel('residual (min')
+                ax[0].set_ylabel('residual (min)')
             else:
                 ax[0].errorbar(self.tcobs_flatten[idx], y, yerr=self.errorobs_flatten[idx]/err, fmt='o', lw=1,
                             label='$\chi^2=%.1f$ (%d data)'%(np.sum(y**2), len(y)))
@@ -382,9 +382,10 @@ class JaxTTV(Nbody):
         # Student's t fit
         res = self.tcobs_flatten - tc
         y = np.array(res / self.errorobs_flatten)
-        lnvar, lndf = fit_t_distribution(y, plot=plot)
+        #lnvar, lndf = fit_t_distribution(y, plot=plot, fit_mean=fit_mean)
+        params_st = fit_t_distribution(y, plot=plot, fit_mean=fit_mean)
 
-        return np.mean(res), np.std(res), lnvar, lndf
+        return {'mean': np.mean(res), 'sd': np.std(res)}, params_st
 
     def check_timing_precision(self, params, dtfrac=1e-3, nitr_transit=10, nitr_kepler=10, symplectic=False):
         """ compare get_ttvs outputs with those from get_ttvs_nodata with a smaller timestep
@@ -672,7 +673,7 @@ def get_means_and_stds(models):
     return means, stds
 
 
-def fit_t_distribution(y, plot=True):
+def fit_t_distribution(y, plot=True, fit_mean=False):
     from scipy.stats import t as tdist
     from scipy.stats import norm
     import numpyro
@@ -684,7 +685,11 @@ def fit_t_distribution(y, plot=True):
         logvar = numpyro.sample("lnvar", dist.Uniform(-2, 10))
         df = numpyro.deterministic("df", jnp.exp(logdf))
         v1 = numpyro.deterministic("v1", jnp.exp(logvar))
-        numpyro.sample("obs", dist.StudentT(scale=jnp.sqrt(v1), df=df), obs=y)
+        if fit_mean:
+            mean = numpyro.sample("mean", dist.Uniform(-jnp.std(y), jnp.std(y)))
+            numpyro.sample("obs", dist.StudentT(loc=mean, scale=jnp.sqrt(v1), df=df), obs=y)
+        else:
+            numpyro.sample("obs", dist.StudentT(scale=jnp.sqrt(v1), df=df), obs=y)
 
     kernel = numpyro.infer.NUTS(model)
     mcmc = numpyro.infer.MCMC(kernel, num_warmup=500, num_samples=500)
@@ -694,6 +699,12 @@ def fit_t_distribution(y, plot=True):
 
     samples = mcmc.get_samples()
     lndf, lnvar = np.mean(samples['lndf']), np.mean(samples['lnvar'])
+    pout = {'lndf': lndf, 'lnvar': lnvar}
+    if fit_mean:
+        mean = np.mean(samples['mean'])
+        pout['mean'] = mean
+    else:
+        mean = 0.
 
     if plot:
         sd = np.std(y)
@@ -711,8 +722,8 @@ def fit_t_distribution(y, plot=True):
                 label='normal, $\mathrm{SD}=%.2f$'%sd)
         ax[1].plot(x0, norm.pdf(x0), lw=1, color='C0', ls='dotted', 
                 label='normal, $\mathrm{SD}=1$')
-        ax[1].plot(x0, tdist(loc=0, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).pdf(x0), 
-        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f)'%(lndf, lnvar))
+        ax[1].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).pdf(x0), 
+        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)'%(lndf, lnvar, mean))
         #ax[1].legend(loc='upper right', bbox_to_anchor=(1.5,1))
 
         #ax[0].hist(y, bins=len(y), histtype='step', lw=3, alpha=0.6, density=True, cumulative=True, color='red')
@@ -725,8 +736,8 @@ def fit_t_distribution(y, plot=True):
                 label='normal, $\mathrm{SD}=%.2f$'%sd)
         ax[0].plot(x0, norm.cdf(x0), lw=1, color='C0', ls='dotted', 
                 label='normal, $\mathrm{SD}=1$')
-        ax[0].plot(x0, tdist(loc=0, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).cdf(x0), 
-        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f)'%(lndf, lnvar))
+        ax[0].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).cdf(x0), 
+        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)'%(lndf, lnvar, mean))
         ax[0].legend(loc='upper left', fontsize=14)
 
-    return lnvar, lndf
+    return pout
