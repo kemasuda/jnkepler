@@ -654,7 +654,6 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
         if save is not None:
             plt.savefig(save+"_planet%d.png"%(j+1), dpi=200, bbox_inches="tight")
 
-
 def get_means_and_stds(models):
     """ get mean and standard deviation of the models
 
@@ -666,12 +665,11 @@ def get_means_and_stds(models):
 
     """
     means, stds = [], []
-    for j in range(np.shape(models)[1]):
+    for j in range(len(models[0])):
         models_j = np.array([models[s][j] for s in range(len(models))])
         means.append(np.mean(models_j, axis=0))
         stds.append(np.std(models_j, axis=0))
     return means, stds
-
 
 def fit_t_distribution(y, plot=True, fit_mean=False):
     from scipy.stats import t as tdist
