@@ -115,8 +115,8 @@ class JaxTTV(Nbody):
             print ("# integration starts at:".ljust(35) + "%.2f"%self.t_start)
             print ("# first transit time in data:".ljust(35) + "%.2f"%np.min(self.tcobs_flatten))
             print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(self.tcobs_flatten))
-            print ("# integration ends at:".ljust(35) + "%.2f"%self.t_end)
-            print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
+            print ("# integration ends at:".ljust(37) + "%.2f"%self.t_end)
+            print ("# integration time step:".ljust(37) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
             if np.nanmin(p_init)/self.dt < 20.:
                 warnings.warn("time step may be too large.")
             print ()
@@ -417,8 +417,7 @@ class JaxTTV(Nbody):
 
         return tc, tc2
 
-    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False, return_init=False,
-    nontransiting_planet=None):
+    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False, return_init=False, nontransiting_planet=None):
         """ find maximum-likelihood parameters using scipy.optimize.curve_fit
         Could write a more elaborate function separately.
 
