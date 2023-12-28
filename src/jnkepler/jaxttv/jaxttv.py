@@ -115,13 +115,13 @@ class JaxTTV(Nbody):
             print ("# integration starts at:".ljust(35) + "%.2f"%self.t_start)
             print ("# first transit time in data:".ljust(35) + "%.2f"%np.min(self.tcobs_flatten))
             print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(self.tcobs_flatten))
-            print ("# integration ends at:".ljust(37) + "%.2f"%self.t_end)
-            print ("# integration time step:".ljust(37) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
+            print ("# integration ends at:".ljust(35) + "%.2f"%self.t_end)
+            print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
             if np.nanmin(p_init)/self.dt < 20.:
                 warnings.warn("time step may be too large.")
             print ()
-            print ("# number of transiting planets:".ljust(35) + "%d"%self.nplanet)
-            print ("# number of non-transiting planets:".ljust(35) + "%d"%self.nplanet_nt)
+            print ("# number of transiting planets:".ljust(37) + "%d"%self.nplanet)
+            print ("# number of non-transiting planets:".ljust(37) + "%d"%self.nplanet_nt)
 
         assert self.t_start < np.min(self.tcobs_flatten), "t_start seems too small compared to the first transit time in data."
         assert np.max(self.tcobs_flatten) < self.t_end, "t_end seems too large compared to the last transit time in data."
