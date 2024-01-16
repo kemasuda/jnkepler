@@ -594,7 +594,7 @@ def integrate_orbits_hermite(xjac0, vjac0, masses, times):
 
 
 def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
-               tcmodelunclist=None, tmargin=None, save=None, marker=None,
+               tcmodelunclist=None, tmargin=None, save=None, marker=None, ylims=None, ylims_residual=None,
                unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
     """ plot transit time model
 
@@ -608,7 +608,8 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
             save: if not None, plot is saved as "save_planet#.png"
             marker: marker for model
             unit: TTV unit (defaults to minutes)
-            ylabel, xlabel: axis labels in plot
+            ylabel, xlabel: axis labels in the plots
+            ylims, ylims_residual: y ranges in the plots
 
     """
     for j, (tcmodel, tcobs, errorobs, t0, p) in enumerate(zip(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin)):
@@ -635,12 +636,16 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
                             (tcmodel+munc-tlin)[idxm]*unit,
                              lw=1, color='steelblue', zorder=-1000, alpha=0.2)
         ax.set_title("planet %d"%(j+1))
+        if ylims is not None and len(ylims)==len(t0_lin):
+            ax2.set_ylim(ylims[j])
 
         idxm = findidx_map(tcmodel, tcobs) 
         ax2.errorbar(tcobs, (tcobs-tcmodel[idxm])*unit, yerr=errorobs*unit, zorder=1000,
                      fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
         ax2.axhline(y=0, color='steelblue', alpha=0.6)
         ax2.set_ylabel("residual (min)")
+        if ylims_residual is not None and len(ylims_residual)==len(t0_lin):
+            ax2.set_ylim(ylims_residual[j])
 
         # change legend order
         handles, labels = ax.get_legend_handles_labels()
