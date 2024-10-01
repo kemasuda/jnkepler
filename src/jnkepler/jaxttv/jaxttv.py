@@ -447,7 +447,7 @@ class JaxTTV(Nbody):
             return pinit
 
         def getmodel(params):
-            elements, masses = params_to_elements(params, npl+npl_nt)
+            elements, masses = params_to_elements(params, npl)
             model = self.get_ttvs(elements, masses)[0]
             return model
 
@@ -480,7 +480,7 @@ class JaxTTV(Nbody):
         print ("# elapsed time (least square): %.1f sec" % (time.time()-start_time))
         pfinal = popt
 
-        elements, masses = params_to_elements(pfinal, npl+npl_nt)
+        elements, masses = params_to_elements(pfinal, npl)
         if plot:
             #self.quicklook(getmodel(pfinal), save=save)
             t0_lin, p_lin = self.linear_ephemeris()
