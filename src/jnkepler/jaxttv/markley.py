@@ -1,7 +1,7 @@
 # Kepler equation solver based on Markley (1995)
 import jax.numpy as jnp
-from jax import jit
-from jax.config import config
+from jax import jit, config
+#from jax.config import config
 config.update('jax_enable_x64', True)
 
 #%%
