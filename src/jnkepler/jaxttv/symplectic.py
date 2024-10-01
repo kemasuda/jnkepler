@@ -6,10 +6,10 @@ __all__ = [
 ]
 
 import jax.numpy as jnp
-from jax import jit, vmap, grad
+from jax import jit, vmap, grad, config
 from jax.lax import scan
 from .conversion import jacobi_to_astrocentric, BIG_G
-from jax.config import config
+#from jax.config import config
 config.update('jax_enable_x64', True)
 
 

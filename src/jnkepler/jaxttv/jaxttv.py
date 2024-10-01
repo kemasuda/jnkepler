@@ -12,8 +12,8 @@ from .findtransit import find_transit_times_single, find_transit_times_all, find
 from .symplectic import integrate_xv, kepler_step_map
 from .hermite4 import integrate_xv as integrate_xv_hermite4
 from .rv import *
-from jax import jit, grad
-from jax.config import config
+from jax import jit, grad, config
+#from jax.config import config
 config.update('jax_enable_x64', True)
 
 

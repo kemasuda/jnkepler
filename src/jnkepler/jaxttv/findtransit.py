@@ -7,14 +7,14 @@ __all__ = [
 
 #%%
 import jax.numpy as jnp
-from jax import jit, vmap, grad
+from jax import jit, vmap, grad, config
 from jax.lax import scan
 from functools import partial
 from .conversion import cm_to_astrocentric, xvjac_to_xvacm, jacobi_to_astrocentric, BIG_G
 from .symplectic import kepler_step_map, kick_kepler_map
 from .hermite4 import hermite4_step_map
 from .utils import findidx_map, get_energy_map
-from jax.config import config
+#from jax.config import config
 config.update('jax_enable_x64', True)
 
 

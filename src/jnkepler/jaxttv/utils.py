@@ -4,11 +4,11 @@ __all__ = [
 ]
 
 import jax.numpy as jnp
-from jax import jit, vmap
+from jax import jit, vmap, config
 from jax.lax import scan
 from .markley import get_E
 from .conversion import tic_to_u, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
-from jax.config import config
+#from jax.config import config
 config.update('jax_enable_x64', True)
 
 #%%
