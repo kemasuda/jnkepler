@@ -13,7 +13,6 @@ from .symplectic import integrate_xv, kepler_step_map
 from .hermite4 import integrate_xv as integrate_xv_hermite4
 from .rv import *
 from jax import jit, grad, config
-#from jax.config import config
 config.update('jax_enable_x64', True)
 
 
@@ -53,18 +52,8 @@ class JaxTTV(Nbody):
         super(JaxTTV, self).__init__(t_start, t_end, dt, nitr_kepler=nitr_kepler)
         self.transit_time_method = transit_time_method
         self.nitr_transit = nitr_transit
-        """
-        self.t_start = t_start
-        self.t_end = t_end
-        self.dt = dt
-        self.times = jnp.arange(t_start, t_end, dt)
-        self.nitr_kepler = nitr_kepler
-        self.transit_time_method = transit_time_method
-        self.nitr_transit = nitr_transit
-        """
 
-
-    def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True, nplanet_nt=0):
+    def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
         """ set observed transit times
         JaxTTV returns transit times that are closest to the observed times,
         rather than all the transit times between t_start and t_end
@@ -78,8 +67,7 @@ class JaxTTV(Nbody):
         self.tcobs = tcobs
         self.tcobs_flatten = np.hstack([t for t in tcobs])
         self.nplanet = len(tcobs)
-        self.nplanet_nt = nplanet_nt
-        self.nbody = len(tcobs) + 1 # not used? may be confusing when nplanet_nt != 0
+        #self.nbody = len(tcobs) + 1 # not used? may be confusing when nplanet_nt != 0
         self.p_init = p_init
         if errorobs is None:
             self.errorobs = None
@@ -121,7 +109,6 @@ class JaxTTV(Nbody):
                 warnings.warn("time step may be too large.")
             print ()
             print ("# number of transiting planets:".ljust(37) + "%d"%self.nplanet)
-            print ("# number of non-transiting planets:".ljust(37) + "%d"%self.nplanet_nt)
 
         assert self.t_start < np.min(self.tcobs_flatten), "t_start seems too small compared to the first transit time in data."
         assert np.max(self.tcobs_flatten) < self.t_end, "t_end seems too large compared to the last transit time in data."
@@ -400,7 +387,7 @@ class JaxTTV(Nbody):
                 tc2: model transit times using a smaller timestep
 
         """
-        elements, masses = params_to_elements(params, self.nplanet+self.nplanet_nt)
+        elements, masses = params_to_elements(params, self.nplanet)
         tc, de = self.get_ttvs(elements, masses)
         print ("# fractional energy error (symplectic, dt=%.2e): %.2e" % (self.dt,de))
 
@@ -417,7 +404,7 @@ class JaxTTV(Nbody):
 
         return tc, tc2
 
-    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False, return_init=False, nontransiting_planet=None):
+    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False, return_init=False):
         """ find maximum-likelihood parameters using scipy.optimize.curve_fit
         Could write a more elaborate function separately.
 
@@ -440,33 +427,15 @@ class JaxTTV(Nbody):
         import time
 
         npl = self.nplanet
-        if nontransiting_planet is not None:
-            npl_nt = 1
-            if self.nplanet_nt != 1:
-                print ("# number of non-transiting planet set to be 1.")
-                self.nplanet_nt = 1
-            try:
-                m_, p_, ecosw_, esinw_, cosi_, o_, tc_ = nontransiting_planet['mass'], nontransiting_planet['period'], nontransiting_planet['ecosw'], nontransiting_planet['esinw'], nontransiting_planet['cosi'], nontransiting_planet['lnode'], nontransiting_planet['tc']
-            except:
-                print ("# argument 'nontransiting_planet' should be a dictionary containing mass, period, ecosw, esinw, cosi, lnode, and tc.")
-        else:
-            npl_nt = 0
 
         params_lower, params_upper, pnames = [], [], []
         for j in range(npl): # need to be changed to take into account non-transiting planets
             params_lower += [self.p_init[j]-dp, -emax, -emax, cosilim[0], olim[0], self.tcobs[j][0]-dtic]
             params_upper += [self.p_init[j]+dp, emax+1e-2, emax+1e-2, cosilim[1], olim[1], self.tcobs[j][0]+dtic]
             pnames += ["p%d"%(j+1), "ec%d"%(j+1), "es%d"%(j+1), "cosi%d"%(j+1), "om%d"%(j+1), "tic%d"%(j+1)]
-        if npl_nt:
-            params_lower += [p_[0], ecosw_[0], esinw_[0], cosi_[0], o_[0], tc_[0]]
-            params_upper += [p_[1], ecosw_[1], esinw_[1], cosi_[1], o_[1], tc_[1]]
-            pnames += ["p%d"%(j+2), "ec%d"%(j+2), "es%d"%(j+2), "cosi%d"%(j+2), "om%d"%(j+2), "tic%d"%(j+2)]
         params_lower += [jnp.log(mmin)] * npl
         params_upper += [jnp.log(mmax)] * npl
-        if npl_nt:
-            params_lower += [jnp.log(m_[0])]
-            params_upper += [jnp.log(m_[1])]
-        pnames += ["m%d"%(j+1) for j in range(npl+npl_nt)]
+        pnames += ["m%d"%(j+1) for j in range(npl)]
 
         params_lower = jnp.array(params_lower).ravel()
         params_upper = jnp.array(params_upper).ravel()
