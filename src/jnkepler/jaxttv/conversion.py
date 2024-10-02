@@ -6,10 +6,10 @@ __all__ = [
 
 
 import jax.numpy as jnp
-from jax import jit, vmap
+from jax import jit, vmap, config
 from jax.lax import scan
 from .markley import get_E
-from jax.config import config
+#from jax.config import config
 config.update('jax_enable_x64', True)
 
 BIG_G = 2.959122082855911e-4
@@ -24,9 +24,10 @@ def reduce_angle(M):
             angle mapped to [-pi, pi)
 
     """
-    Mmod = M % (2*jnp.pi)
-    Mred = jnp.where(Mmod >= jnp.pi, Mmod-2*jnp.pi, Mmod)
-    return Mred
+    return (M + jnp.pi) % (2 * jnp.pi) - jnp.pi
+    #Mmod = M % (2*jnp.pi)
+    #Mred = jnp.where(Mmod >= jnp.pi, Mmod-2*jnp.pi, Mmod)
+    #return Mred
 
 
 def tic_to_u(tic, period, ecc, omega, t_epoch):

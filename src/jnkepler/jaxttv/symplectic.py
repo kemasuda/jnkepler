@@ -6,10 +6,10 @@ __all__ = [
 ]
 
 import jax.numpy as jnp
-from jax import jit, vmap, grad
+from jax import jit, vmap, grad, config
 from jax.lax import scan
 from .conversion import jacobi_to_astrocentric, BIG_G
-from jax.config import config
+#from jax.config import config
 config.update('jax_enable_x64', True)
 
 
@@ -25,7 +25,7 @@ def dEstep(x, ecosE0, esinE0, dM):
             delta(eccentric anomaly) from single iteration
 
     """
-    x2 = x / 2.0
+    x2 = x / 2.0 # x = deltaE
     sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
     sx, cx = 2.0*sx2*cx2, cx2*cx2 - sx2*sx2
     f = x + 2.0*sx2*(sx2*esinE0 - cx2*ecosE0) - dM

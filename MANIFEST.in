@@ -5,3 +5,8 @@ include src/jnkepler/data/kep51_dt1.0_start155.00_end2950.00_pdict_ttvfast.csv
 include src/jnkepler/data/kep51_dt1.0_start155.00_end2950.00_pdict.csv
 include src/jnkepler/data/kep51_dt1.0_start155.00_end2950.00_tc.csv
 include src/jnkepler/data/kep51_dt1.0_start155.00_end2950.00_grad.txt
+include src/jnkepler/data/tcbug_elements.txt
+include src/jnkepler/data/tcbug_masses.txt
+include src/jnkepler/data/kep51_lc_model.txt
+include src/jnkepler/data/kep51_lc_photodtest.csv
+include src/jnkepler/data/kep51_ttv_photodtest.txt

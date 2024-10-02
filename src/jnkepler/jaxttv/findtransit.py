@@ -1,19 +1,20 @@
 """ routines for finding transit times
 """
 __all__ = [
-    "find_transit_times_single", "find_transit_times_all", "find_transit_times_kepler_all"
+    "find_transit_times_single", "find_transit_times_all", "find_transit_params_all",
+    "find_transit_times_kepler_all"
 ]
 
 #%%
 import jax.numpy as jnp
-from jax import jit, vmap, grad
+from jax import jit, vmap, grad, config
 from jax.lax import scan
 from functools import partial
 from .conversion import cm_to_astrocentric, xvjac_to_xvacm, jacobi_to_astrocentric, BIG_G
 from .symplectic import kepler_step_map, kick_kepler_map
 from .hermite4 import hermite4_step_map
 from .utils import findidx_map, get_energy_map
-from jax.config import config
+#from jax.config import config
 config.update('jax_enable_x64', True)
 
 
@@ -188,6 +189,51 @@ def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
     tc += nrstep_init + jnp.sum(steps, axis=0)
 
     return tc
+
+
+def find_transit_params_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
+    """ find transit times for all planets
+
+        Args:
+            pidxarr: array of orbit index starting from 0 (Ntransit,)
+            tcobsarray: flattened array of observed transit times (Ntransit,)
+            t: times (Nstep,)
+            xvjac: Jacobi positions and velocities (Nstep, x or v, Norbit, xyz)
+            masses: masses of the bodies (Nbody,)
+            nitr: number of Newton-Raphson iterations
+
+        Returns:
+            transit times (1D flattened array)
+
+    """
+    xjac, vjac = xvjac[:,0,:,:], xvjac[:,1,:,:]
+    tcflag = get_tcflag(xjac, vjac)
+    tcidx = find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
+
+    tc = t[1:][tcidx]
+    xvjac_init = xvjac[1:][tcidx]
+
+    # bring back the system by dt/2 so that the systems are at conclusions of the symplectic step
+    dt_correct = -0.5 * jnp.diff(t)[0]
+    tc += dt_correct
+    xjac_init, vjac_init = kepler_step_map(xvjac_init[:,0,:,:], xvjac_init[:,1,:,:], masses, dt_correct)
+
+    xcm_init, vcm_init, acm_init = xvjac_to_xvacm(xjac_init, vjac_init, masses)
+    nrstep_init = get_nrstep_map(xcm_init, vcm_init, acm_init, pidxarr)
+
+    def tcstep(xvs, i):
+        xin, vin, step = xvs
+        xtc, vtc, atc = hermite4_step_map(xin, vin, masses, step)
+        xtc = jnp.transpose(xtc, axes=[2,0,1])
+        vtc = jnp.transpose(vtc, axes=[2,0,1])
+        atc = jnp.transpose(atc, axes=[2,0,1])
+        step = get_nrstep_map(xtc, vtc, atc, pidxarr)
+        return [xtc, vtc, step], step
+
+    xvs, steps = scan(tcstep, [xcm_init, vcm_init, nrstep_init], jnp.arange(nitr))
+    tc += nrstep_init + jnp.sum(steps, axis=0)
+
+    return tc, xvs
 
 
 """ TTVFast algorithm """

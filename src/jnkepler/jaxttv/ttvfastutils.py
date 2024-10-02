@@ -1,4 +1,4 @@
-__all__ = ["params_for_ttvfast", "get_ttvfast_model"]
+__all__ = ["params_for_ttvfast", "get_ttvfast_model", "get_ttvfast_model_all"]
 
 import numpy as np
 import pandas as pd
@@ -103,3 +103,39 @@ def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end):
         tcs.append(tc)
 
     return tnums, tcs
+
+
+def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end):
+    """ compute transit times using ttvfast-python
+        Args:
+            pdic: parameter dataframe from params_for_ttvfast
+            num_planets: number of planets
+            t_start: start time of integration
+            dt: integration time step
+            t_end: end time of integration
+        Returns:
+            list of transit epochs
+            list of transit times
+            list of sky-plane distances (au)
+            list of sky-plane velocities (au/day)
+    """
+    import ttvfast
+    planets, smass = get_planets_smass(pdic, num_planets)
+    ttvfast_results = ttvfast.ttvfast(planets, smass, t_start, dt, t_end)
+
+    idx_planet = np.array(ttvfast_results['positions'][0],'i')
+    transit_epochs = np.array(ttvfast_results['positions'][1],'i')
+    transit_times = np.array(ttvfast_results['positions'][2],'d')
+    transit_rsky = np.array(ttvfast_results['positions'][3],'d')
+    transit_vsky = np.array(ttvfast_results['positions'][4],'d')
+
+    tnums, tcs, rskys, vskys = [], [], [], []
+    for i in range(num_planets):
+        idx = (idx_planet == i) & (transit_times > -2)
+        tnum, tc, rsky, vsky = transit_epochs[idx], transit_times[idx], transit_rsky[idx], transit_vsky[idx]
+        tnums.append(tnum)
+        tcs.append(tc)
+        rskys.append(rsky)
+        vskys.append(vsky)
+
+    return tnums, tcs, rskys, vskys
