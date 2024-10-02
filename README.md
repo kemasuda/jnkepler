@@ -25,5 +25,5 @@ see notebooks in examples
 
 - TOI-1136: TTV modeling of 6-planets in a resonance chain [[paper]](https://ui.adsabs.harvard.edu/abs/2022arXiv221009283D/abstract)
 - TOI-2015: joint TTV & RV modeling of a two-planet system [[paper]](https://arxiv.org/abs/2310.11775)
-- four-planet system
+- Kepler-51: four-planet modeling including JWST data [[repository]](https://github.com/kemasuda/kep51_jwst)
 
