@@ -10,3 +10,4 @@ __description__ = "modeling non-keplerian dynamics with jax"
 from . import jaxttv
 from . import nbodytransit
 from . import nbodyrv
+from . import infer
