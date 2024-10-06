@@ -1,5 +1,5 @@
 
-__all__ = ["information", "scale_information", "observed_information", "hessian"]
+__all__ = ["information", "scale_information", "observed_information", "hessian", "information_numpyrox"]
 
 import jax.numpy as jnp
 from jax import jacfwd, jacrev, jit
@@ -58,6 +58,25 @@ def information(jttv, pdic, keys):
     sigma_inv = jnp.diag(1. / jttv.errorobs_flatten**2)
     information_matrix = jacobian.T@sigma_inv@jacobian
     return information_matrix
+
+
+def information_numpyrox(numpyro_model, pdic, **kwargs):
+    """Fisher information from numpyro model using numpryo-ext
+
+        Args:
+            numpyro_model: numpyro model 
+            pdic: dict containing parameters
+            kwargs: additional arguments for numpyro model
+
+        Returns:
+            information matrix evaulated at pdic, list of site names
+
+    """
+    from numpyro_ext import information
+    info_inv = information(numpyro_model, invert=True)(pdic, **kwargs)
+    pnames = list(info_inv.keys())
+    matrix = get_2d_matrix(info_inv, param_order=pnames)
+    return matrix, pnames
 
 
 def scale_information(matrix, param_bounds, keys):
