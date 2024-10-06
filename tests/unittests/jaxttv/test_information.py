@@ -1,10 +1,8 @@
 import numpy as np
-#import pkg_resources
 import importlib_resources
 from jnkepler.tests import read_testdata_tc
 from jnkepler.jaxttv.information import *
 
-#path = pkg_resources.resource_filename('jnkepler', 'data/')
 path = importlib_resources.files('jnkepler').joinpath('data')
 
 def test_information():
