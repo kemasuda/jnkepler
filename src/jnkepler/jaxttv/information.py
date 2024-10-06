@@ -1,25 +1,27 @@
 
-__all__ = ["information", "observed_information", "hessian"]
+__all__ = ["information", "scale_information", "observed_information", "hessian"]
 
 import jax.numpy as jnp
 from jax import jacfwd, jacrev, jit
 
 
-def model_pdic(jttv, pdic):
+def model_pdic(jttv, pdic, ms=1., lnmass=False):
     """transit times from parameter dict
     
         Args:
             jttv: JaxTTV object
             pdic: dict containing parameters
+            ms: stellar mass (solar unit)
 
         Returns:
             1D flattened model transit times
     
     """
-    ecosw, esinw, mass, period, tic, lnode, cosi \
-        = pdic['ecosw'], pdic['esinw'], pdic['mass'], pdic['period'], pdic['tic'], pdic['lnode'], pdic['cosi'] 
-    elements = jnp.stack([period, ecosw, esinw, lnode, cosi, tic]).T 
-    masses = jnp.hstack([1., mass])
+    ecosw, esinw, period, tic, lnode, cosi \
+        = pdic['ecosw'], pdic['esinw'], pdic['period'], pdic['tic'], pdic['lnode'], pdic['cosi'] 
+    mass = jnp.exp(pdic['lnmass']) if lnmass else pdic['mass']
+    elements = jnp.stack([period, ecosw, esinw, cosi, lnode, tic]).T 
+    masses = jnp.hstack([ms, mass])
     return jttv.get_ttvs(elements, masses)[0]
 
 
@@ -38,22 +40,47 @@ def negative_log_likelihood(jttv, pdic):
     return 0.5 * jnp.sum( ((jttv.tcobs_flatten - transit_times) / jttv.errorobs_flatten)**2 )
 
 
-def information(jttv, pdic, keys=['ecosw', 'esinw', 'mass', 'period', 'tic']):
+def information(jttv, pdic, keys):
     """compute Fisher information matrix for iid gaussian likelihood
 
         Args:
             jttv: JaxTTV object
             pdic: dict containing parameters
+            keys: parameter keys (normally ['ecosw', 'esinw', 'mass', 'period', 'tic'])
 
         Returns:
             information matrix computed as grad.T Sigma_inv grad
 
     """
-    jacobian_pytree = jacrev(model_pdic, argnums=1)(jttv, pdic)
+    flag_lnmass = True if "lnmass" in keys else False
+    jacobian_pytree = jacrev(model_pdic, argnums=1)(jttv, pdic, lnmass=flag_lnmass)
     jacobian = jnp.hstack([jacobian_pytree[key] for key in keys])
     sigma_inv = jnp.diag(1. / jttv.errorobs_flatten**2)
     information_matrix = jacobian.T@sigma_inv@jacobian
     return information_matrix
+
+
+def scale_information(matrix, param_bounds, keys):
+    """get information matrix for scaled parameters
+    
+        Args:
+            matrix: information matrix
+            param_bounds: dict containing bounds for parameters, 0: lower, 1: upper
+            keys: parameter keys (normally ['ecosw', 'esinw', 'mass', 'period', 'tic'])
+
+        Returns:
+            information matrix for scaled parameters scaled by 1/(upper - lower)
+
+    
+    """
+    scaled_matrix = jnp.zeros_like(matrix)
+    npl = len(param_bounds["mass"][0])
+    for i,key1 in enumerate(keys):
+        for j,key2 in enumerate(keys):
+            scale_factor = jnp.einsum("i,j->ij", param_bounds[key1][1] - param_bounds[key1][0], param_bounds[key2][1] - param_bounds[key2][0])
+            new_elements = matrix[npl*i:npl*(i+1),npl*j:npl*(j+1)] * scale_factor
+            scaled_matrix = scaled_matrix.at[npl*i:npl*(i+1),npl*j:npl*(j+1)].set(new_elements)
+    return scaled_matrix
 
 
 def get_2d_matrix(p, param_order=['ecosw', 'esinw', 'mass', 'period', 'tic']):
@@ -118,7 +145,7 @@ def hessian(self, pdic, keys=['ecosw', 'esinw', 'mass', 'period', 'tic']):
         npl = self.nplanet
         ecosw, esinw, mass, period, tic = parr[:npl], parr[npl:2*npl], parr[2*npl:3*npl], parr[3*npl:4*npl], parr[4*npl:5*npl]
         lnode, cosi = 0.*period, 0.*period
-        elements = jnp.stack([period, ecosw, esinw, lnode, cosi, tic]).T 
+        elements = jnp.stack([period, ecosw, esinw, cosi, lnode, tic]).T 
         masses = jnp.hstack([1., mass])
 
         masses = jnp.hstack([1., mass])
