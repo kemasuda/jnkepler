@@ -9,6 +9,7 @@ from numpyro.infer.initialization import init_to_value, init_to_sample
 import numpy as np
 import jax.numpy as jnp
 from scipy.optimize import curve_fit
+from copy import deepcopy
 import time
 from jnkepler.jaxttv.utils import params_to_elements
 
@@ -86,12 +87,12 @@ def unscale_pdic(pdic_scaled, param_bounds):
     return pdic
 
 
-def ttv_optim_curve_fit(jttv, param_bounds, p_init=None, jac=False):
+def ttv_optim_curve_fit(jttv, param_bounds_, p_init=None, jac=False):
     """simple TTV fit using scipy.curve_fit with bounds
 
         Args:
             jttv: JaxTTV object
-            param_bounds: bounds for parameters, 0: lower, 1: upper
+            param_bounds_: bounds for parameters, 0: lower, 1: upper
             p_init: initial parameter values (if None, center of lower/upper bounds)
             jac: if True jacrev(model) is used
 
@@ -100,6 +101,7 @@ def ttv_optim_curve_fit(jttv, param_bounds, p_init=None, jac=False):
 
     """
     npl = jttv.nplanet 
+    param_bounds = deepcopy(param_bounds_)
 
     if "cosi" not in param_bounds.keys() or "lnode" not in param_bounds.keys():
         print ("# bounds for cosi/lnode not provided: assuming coplanar orbits...")
