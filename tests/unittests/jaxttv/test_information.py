@@ -9,7 +9,8 @@ def test_information():
     info_ref = np.loadtxt(path/"info.txt")
     
     jttv, _, _, pdic = read_testdata_tc()
-    info = information(jttv, pdic)
+    sample_keys = ['ecosw', 'esinw', 'mass', 'period', 'tic']
+    info = information(jttv, pdic, sample_keys)
 
     assert np.allclose(info, info_ref)
 
