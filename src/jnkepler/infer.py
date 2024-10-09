@@ -74,6 +74,16 @@ def ttv_default_parameter_bounds(jttv, dtic=0.05, dp_frac=1e-2, emax=0.2, mmin=1
 
 
 def scale_pdic(pdic, param_bounds):
+    """scale parameters using bounds
+    
+        Args:
+            pdic: dict of physical parameters
+            param_bounds: dictionary of (lower bound array, upper bound array)
+
+        Returns:
+            dict of scaled parameters
+    
+    """
     pdic_scaled = {}
     for key in param_bounds.keys():
         pdic_scaled[key+"_scaled"] = (pdic[key] - param_bounds[key][0]) / (param_bounds[key][1] - param_bounds[key][0])
@@ -81,6 +91,16 @@ def scale_pdic(pdic, param_bounds):
 
 
 def unscale_pdic(pdic_scaled, param_bounds):
+    """unscale parameters using bounds
+    
+        Args:
+            pdic: dict of scaled parameters
+            param_bounds: dictionary of (lower bound array, upper bound array)
+
+        Returns:
+            dict of physical parameters in original scales
+    
+    """
     pdic = {}
     for key in param_bounds.keys():
         pdic[key] = param_bounds[key][0] + (param_bounds[key][1] - param_bounds[key][0]) * pdic_scaled[key+"_scaled"]
