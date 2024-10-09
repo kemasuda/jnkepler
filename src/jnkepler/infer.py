@@ -1,5 +1,5 @@
 
-__all__ = ["run_svi_optim", "ttv_default_parameter_bounds", "ttv_optim_curve_fit", "scale_pdic", "unscale_pdic"]
+__all__ = ["optim_svi", "ttv_default_parameter_bounds", "ttv_optim_curve_fit", "scale_pdic", "unscale_pdic"]
 
 from jax import random, jacrev
 import numpyro
@@ -14,7 +14,7 @@ import time
 from jnkepler.jaxttv.utils import params_to_elements
 
 
-def run_svi_optim(numpyro_model, step_size, num_steps, p_initial=None):
+def optim_svi(numpyro_model, step_size, num_steps, p_initial=None):
     """SVI optimizer
 
         Args:
