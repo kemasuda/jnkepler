@@ -35,6 +35,6 @@ def test_observed_information():
 
 
 if __name__ == '__main__':
-    #test_information()
-    #test_hessian()
+    test_information()
+    test_hessian()
     test_observed_information()
