@@ -24,6 +24,17 @@ def test_hessian():
     assert np.allclose(hess, hess_ref)
 
 
+def test_observed_information():
+    hess_ref = np.loadtxt(path/"hessian.txt")
+    
+    jttv, _, _, pdic = read_testdata_tc()
+    sample_keys = ['ecosw', 'esinw', 'mass', 'period', 'tic']
+    hess = observed_information(jttv, pdic, sample_keys)
+
+    assert np.allclose(hess, hess_ref)
+
+
 if __name__ == '__main__':
-    test_information()
-    test_hessian()
+    #test_information()
+    #test_hessian()
+    test_observed_information()

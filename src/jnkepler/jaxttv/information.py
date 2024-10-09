@@ -2,7 +2,7 @@
 __all__ = ["information", "scale_information", "observed_information", "hessian", "information_numpyrox"]
 
 import jax.numpy as jnp
-from jax import jacfwd, jacrev, jit
+from jax import jacfwd, jacrev
 
 
 def model_pdic(jttv, pdic, ms=1., lnmass=False):
@@ -25,39 +25,54 @@ def model_pdic(jttv, pdic, ms=1., lnmass=False):
     return jttv.get_ttvs(elements, masses)[0]
 
 
-def negative_log_likelihood(jttv, pdic):
-    """negative log likelihood (iid gaussian)
-    
-        Args:
-            jttv: JaxTTV object
-            pdic: dict containing parameters
-
-        Returns:
-            negative log likelihood
-    
-    """
-    transit_times = model_pdic(jttv, pdic)
-    return 0.5 * jnp.sum( ((jttv.tcobs_flatten - transit_times) / jttv.errorobs_flatten)**2 )
-
-
 def information(jttv, pdic, keys):
     """compute Fisher information matrix for iid gaussian likelihood
 
         Args:
             jttv: JaxTTV object
-            pdic: dict containing parameters
-            keys: parameter keys (normally ['ecosw', 'esinw', 'mass', 'period', 'tic'])
+            pdic: dict containing parameters; keys must contain {ecosw, esinw, period, tic, lnode, cosi} and {mass or lnmass}
+            keys: parameter keys for computing fisher matrix
 
         Returns:
             information matrix computed as grad.T Sigma_inv grad
 
     """
+    assert {'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi'}.issubset(pdic.keys()), "pdic keys must contain all of ecosw, esinw, period, tic, lnode, cosi."
+    assert 'mass' in pdic.keys() or 'lnmass' in pdic.keys(), "pdic keys must contain either mass or lnmass."
     flag_lnmass = True if "lnmass" in keys else False
+    assert set(keys).issubset({'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi', 'lnmass' if flag_lnmass else 'mass'}), "pdic keys must a subsect of {ecosw, esinw, period, tic, lnode, cosi}+{mass or lnmass}"
     jacobian_pytree = jacrev(model_pdic, argnums=1)(jttv, pdic, lnmass=flag_lnmass)
     jacobian = jnp.hstack([jacobian_pytree[key] for key in keys])
     sigma_inv = jnp.diag(1. / jttv.errorobs_flatten**2)
     information_matrix = jacobian.T@sigma_inv@jacobian
     return information_matrix
+
+
+def get_2d_matrix(p, param_order):
+    """extract 2D matrix from pytree
+
+        Args:
+            p: pytree (as output from numpyro_ext.information)
+            param_order: list of parameter keys
+
+        Returns:
+            2D array
+
+    """
+    coord_dict = {}
+    N_par = 0
+    size = len(p[param_order[0]][param_order[0]][0])
+
+    for par in param_order:
+        coord_dict[par] = jnp.arange(N_par, N_par + size)
+        N_par += size
+
+    arr_2D = jnp.zeros((N_par, N_par))
+    for k1 in param_order:
+        for k2 in param_order:
+            arr_2D = arr_2D.at[jnp.ix_(coord_dict[k1], coord_dict[k2])].set(p[k1][k2])
+
+    return arr_2D
 
 
 def information_numpyrox(numpyro_model, pdic, **kwargs):
@@ -100,29 +115,26 @@ def scale_information(matrix, param_bounds, keys):
             new_elements = matrix[npl*i:npl*(i+1),npl*j:npl*(j+1)] * scale_factor
             scaled_matrix = scaled_matrix.at[npl*i:npl*(i+1),npl*j:npl*(j+1)].set(new_elements)
     return scaled_matrix
-
-
-def get_2d_matrix(p, param_order=['ecosw', 'esinw', 'mass', 'period', 'tic']):
-    """extract 2D matrix from pytree
-    """
-    coord_dict = {}
-    N_par = 0
-    size = len(p[param_order[0]][param_order[0]][0])
-
-    for par in param_order:
-        coord_dict[par] = jnp.arange(N_par, N_par + size)
-        N_par += size
-
-    arr_2D = jnp.zeros((N_par, N_par))
-    for k1 in param_order:
-        for k2 in param_order:
-            arr_2D = arr_2D.at[jnp.ix_(coord_dict[k1], coord_dict[k2])].set(p[k1][k2])
-
-    return arr_2D
     
 
-def observed_information(jttv, pdic, keys=['ecosw', 'esinw', 'mass', 'period', 'tic']):
+def negative_log_likelihood(jttv, pdic, lnmass=False):
+    """negative log likelihood (iid gaussian)
+    
+        Args:
+            jttv: JaxTTV object
+            pdic: dict containing parameters
+
+        Returns:
+            negative log likelihood
+    
+    """
+    transit_times = model_pdic(jttv, pdic, lnmass=lnmass)
+    return 0.5 * jnp.sum( ((jttv.tcobs_flatten - transit_times) / jttv.errorobs_flatten)**2 )
+
+
+def observed_information(jttv, pdic, keys):
     """compute observed Fisher information matrix (a.k.a. Hessian) for iid gaussian likelihood
+    returns the same as hessian for keys=['ecosw', 'esinw', 'mass', 'period', 'tic'].
 
         Args:
             jttv: JaxTTV object
@@ -132,6 +144,11 @@ def observed_information(jttv, pdic, keys=['ecosw', 'esinw', 'mass', 'period', '
             observed information matrix computed as grad.T Sigma_inv grad
 
     """
+    assert {'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi'}.issubset(pdic.keys()), "pdic keys must contain all of ecosw, esinw, period, tic, lnode, cosi."
+    assert 'mass' in pdic.keys() or 'lnmass' in pdic.keys(), "pdic keys must contain either mass or lnmass."
+    flag_lnmass = True if "lnmass" in keys else False
+    assert set(keys).issubset({'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi', 'lnmass' if flag_lnmass else 'mass'}), "pdic keys must a subsect of {ecosw, esinw, period, tic, lnode, cosi}+{mass or lnmass}"
+
     # jacfwd fails for newton-raphson method
     from copy import deepcopy
     if jttv.transit_time_method != "interpolation":
@@ -140,13 +157,14 @@ def observed_information(jttv, pdic, keys=['ecosw', 'esinw', 'mass', 'period', '
     else:
         jttv_copy = jttv
 
-    hessian_pytree = jacfwd(jacrev(negative_log_likelihood, argnums=1), argnums=1)(jttv_copy, pdic)
+    hessian_pytree = jacfwd(jacrev(negative_log_likelihood, argnums=1), argnums=1)(jttv_copy, pdic, lnmass=flag_lnmass)
     
-    return get_2d_matrix(hessian_pytree)
+    return get_2d_matrix(hessian_pytree, keys)
 
 
-def hessian(self, pdic, keys=['ecosw', 'esinw', 'mass', 'period', 'tic']):
-    """compute hessian for iid gaussian likelihood; DOES NOT WORK FOR OTHER KEYS
+def hessian(self, pdic):
+    """compute hessian for iid gaussian likelihood; CURRENTLY WORKS ONLY FOR ['ecosw', 'esinw', 'mass', 'period', 'tic']
+    for these keys, this function returns the same matirx as observed_hessian but is faster
     
         Args:
             pdic: parameter dictionary
@@ -158,6 +176,8 @@ def hessian(self, pdic, keys=['ecosw', 'esinw', 'mass', 'period', 'tic']):
     from jnkepler.jaxttv.utils import initialize_jacobi_xv
     from jnkepler.jaxttv.findtransit import find_transit_times_kepler_all
     from jnkepler.jaxttv.symplectic import integrate_xv
+
+    keys = ['ecosw', 'esinw', 'mass', 'period', 'tic']
     
     def negloglike(parr):
         # jacfwd fails for newton-raphson method, so use interpolate method
