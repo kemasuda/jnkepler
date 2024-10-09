@@ -15,7 +15,7 @@ from jnkepler.jaxttv.utils import params_to_elements
 
 
 def optim_svi(numpyro_model, step_size, num_steps, p_initial=None):
-    """SVI optimizer
+    """optimization using Stochastic Variational Inference (SVI)
 
         Args:
             numpyro_model: numpyro model
@@ -34,10 +34,10 @@ def optim_svi(numpyro_model, step_size, num_steps, p_initial=None):
     else:
         guide = AutoLaplaceApproximation(numpyro_model, init_loc_fn=init_to_value(values=p_initial))
 
-    # Create a Stochastic Variational Inference (SVI) object with NumPyro
+    # SVI object
     svi = SVI(numpyro_model, guide, optimizer, loss=Trace_ELBO())
 
-    # Run the optimiser and get the median parameters
+    # run the optimizer and get the posterior median
     svi_result = svi.run(random.PRNGKey(0), num_steps)
     params_svi = svi_result.params
     p_fit = guide.median(params_svi)
