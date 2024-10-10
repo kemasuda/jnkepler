@@ -76,7 +76,7 @@ class JaxTTV(Nbody):
             self.errorobs = errorobs
             self.errorobs_flatten = np.hstack([e for e in errorobs])
 
-        pidx, tcobs_linear, ttvamp, tcall_linear = np.array([]), np.array([]), np.array([]), np.array([])
+        pidx, tcobs_linear, ttvamp = np.array([]), np.array([]), np.array([])
         for j in range(len(tcobs)):
             tc = tcobs[j]
             if len(tc) == 0: 
@@ -85,24 +85,19 @@ class JaxTTV(Nbody):
                 pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
                 tc_linear = tc[0]
                 tcobs_linear = np.r_[tcobs_linear, tc_linear]
-                t0fit, pfit = tc[0], p_init[j]
             else:
                 pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
                 m = np.round((tc - tc[0]) / p_init[j])
                 pfit, t0fit = np.polyfit(m, tc, deg=1)
-                tc_linear = t0fit + m*pfit
+                tc_linear = t0fit + m * pfit
                 tcobs_linear = np.r_[tcobs_linear, tc_linear]
 
             ttv = tc - tc_linear
             ttvamp = np.r_[ttvamp, np.max(ttv)-np.min(ttv)]
-            m_all = np.round((tc - tc[0]) / p_init[j])
-            _tcall_linear = t0fit + pfit * m_all
-            tcall_linear = np.r_[tcall_linear, _tcall_linear]
 
         self.pidx = pidx
         self.tcobs_linear = tcobs_linear
         self.ttvamp = ttvamp
-        self.tcall_linear = tcall_linear
 
         if print_info:
             print ("# integration starts at:".ljust(35) + "%.2f"%self.t_start)
@@ -139,6 +134,44 @@ class JaxTTV(Nbody):
             p_new.append(pfit)
 
         return np.array(t0_new), np.array(p_new)
+    
+    def tcall_linear(self, t_start, t_end, truncate=False):
+        """information on all linear transit times between t_start and t_end
+
+            Args:
+                t_start: start time of integration
+                t_end: end time of integration
+
+            Returns:
+                pidxall: 1D array of orbit (planet) index starting from 1
+                tcall_linear: list of linear transit times between t_start and t_end
+                tcall_linear_flatten: 1D flattend version of tcall_linear
+
+        """
+        tcall_linear = []
+        pidxall = np.array([])
+
+        for j in range(len(self.tcobs)):
+            tc = self.tcobs[j]
+            if len(tc) == 1:
+                t0fit, pfit = tc[0], self.p_init[j]
+            else:
+                m = np.round((tc - tc[0]) / self.p_init[j])
+                pfit, t0fit = np.polyfit(m, tc, deg=1)
+            
+            m_min, m_max = np.round((t_start - tc[0]) / self.p_init[j]), np.round((t_end - tc[0]) / self.p_init[j])
+            if truncate:
+                mobs_max = np.round((tc[-1] - tc[0]) / self.p_init[j])
+                m_max = min(m_max, mobs_max)
+            m_all = np.arange(m_min, m_max+1)
+            _tcall_linear = t0fit + pfit * m_all
+            _idx_in = (t_start < _tcall_linear) & (_tcall_linear < t_end)
+            tcall_linear.append(_tcall_linear[_idx_in])
+            pidxall = np.r_[pidxall, np.ones_like(_tcall_linear[_idx_in])*(j+1)]
+
+        tcall_linear_flatten = np.hstack([t for t in tcall_linear])
+
+        return pidxall, tcall_linear, tcall_linear_flatten
 
     @partial(jit, static_argnums=(0,))
     def get_ttvs(self, elements, masses):
@@ -201,6 +234,8 @@ class JaxTTV(Nbody):
         """ compute all model transit times between t_start and t_end
         This function is slower than get_ttvs and should not be used for fitting.
 
+        THIS FUNCTION FAILS FOR NON-COPLANAR ORBITS; USE get_transit_times_all INSTEAD
+
             Args:
                 elements: orbital elements in JaxTTV format
                 masses: masses of the bodies (in units of solar mass)
@@ -247,6 +282,38 @@ class JaxTTV(Nbody):
             tcarr = np.hstack(tcarr)
 
         return tcarr, de_frac
+    
+    @partial(jit, static_argnums=(0,3,4,5))
+    def get_transit_times_all(self, elements, masses, t_start=None, t_end=None, dt=None):
+        """ compute all model transit times between t_start and t_end
+
+            Args:
+                elements: orbital elements in JaxTTV format
+                masses: masses of the bodies (in units of solar mass)
+
+            Returns:
+                1D flattened array of transit times
+                fractional energy change
+
+        """
+        # set t_start, t_end, dt, time array
+        if (t_start is None) or (t_end is None) or (dt is None):
+            times, t_start, dt, t_end = self.times, self.t_start, self.dt, self.t_end
+        else:
+            times, t_start, dt, t_end = jnp.arange(t_start, t_end, dt), t_start, dt, t_end
+
+        # compute 1D flattend transit times
+        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, t_start) # initial Jacobi position/velocity
+        times, xvjac = integrate_xv(xjac0, vjac0, masses, times, nitr=self.nitr_kepler) # integration
+        orbit_idx, _, tcobs1d = self.tcall_linear(t_start, t_end)
+        orbit_idx = orbit_idx.astype(int) - 1 # start from 0
+        if self.transit_time_method == 'newton-raphson':
+            transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
+        else:
+            transit_times = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+        ediff = get_energy_diff_jac(xvjac, masses, -0.5*dt)
+
+        return transit_times, ediff
 
     def quicklook(self, model, sigma=None, save=None):
         """ plot observed and model TTVs (may be obsolete given plot_model)
