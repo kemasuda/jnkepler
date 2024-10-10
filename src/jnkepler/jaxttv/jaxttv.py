@@ -110,8 +110,8 @@ class JaxTTV(Nbody):
             print ()
             print ("# number of transiting planets:".ljust(37) + "%d"%self.nplanet)
 
-        assert self.t_start < np.min(self.tcobs_flatten), "t_start seems too small compared to the first transit time in data."
-        assert np.max(self.tcobs_flatten) < self.t_end, "t_end seems too large compared to the last transit time in data."
+        assert self.t_start < np.min(self.tcobs_flatten), "t_start seems too large compared to the first transit time in data."
+        assert np.max(self.tcobs_flatten) < self.t_end, "t_end seems too small compared to the last transit time in data."
 
     def linear_ephemeris(self):
         """ (Re)derive linear ephemeris when necessary
