@@ -55,6 +55,7 @@ class JaxTTV(Nbody):
 
     def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
         """ set observed transit times
+
         JaxTTV returns transit times that are closest to the observed times,
         rather than all the transit times between t_start and t_end
 
@@ -67,7 +68,6 @@ class JaxTTV(Nbody):
         self.tcobs = tcobs
         self.tcobs_flatten = np.hstack([t for t in tcobs])
         self.nplanet = len(tcobs)
-        #self.nbody = len(tcobs) + 1 # not used? may be confusing when nplanet_nt != 0
         self.p_init = p_init
         if errorobs is None:
             self.errorobs = None
@@ -76,7 +76,7 @@ class JaxTTV(Nbody):
             self.errorobs = errorobs
             self.errorobs_flatten = np.hstack([e for e in errorobs])
 
-        pidx, tcobs_linear, ttvamp = np.array([]), np.array([]), np.array([])
+        pidx, tcobs_linear, ttvamp, tcall_linear = np.array([]), np.array([]), np.array([]), np.array([])
         for j in range(len(tcobs)):
             tc = tcobs[j]
             if len(tc) == 0: 
@@ -85,6 +85,7 @@ class JaxTTV(Nbody):
                 pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
                 tc_linear = tc[0]
                 tcobs_linear = np.r_[tcobs_linear, tc_linear]
+                t0fit, pfit = tc[0], p_init[j]
             else:
                 pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
                 m = np.round((tc - tc[0]) / p_init[j])
@@ -94,10 +95,14 @@ class JaxTTV(Nbody):
 
             ttv = tc - tc_linear
             ttvamp = np.r_[ttvamp, np.max(ttv)-np.min(ttv)]
+            m_all = np.round((tc - tc[0]) / p_init[j])
+            _tcall_linear = t0fit + pfit * m_all
+            tcall_linear = np.r_[tcall_linear, _tcall_linear]
 
         self.pidx = pidx
         self.tcobs_linear = tcobs_linear
         self.ttvamp = ttvamp
+        self.tcall_linear = tcall_linear
 
         if print_info:
             print ("# integration starts at:".ljust(35) + "%.2f"%self.t_start)
