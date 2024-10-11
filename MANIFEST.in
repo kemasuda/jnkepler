@@ -12,3 +12,4 @@ include src/jnkepler/data/kep51_lc_photodtest.csv
 include src/jnkepler/data/kep51_ttv_photodtest.txt
 include src/jnkepler/data/info.txt
 include src/jnkepler/data/hessian.txt
+include src/jnkepler/data/JaxTTVobject.pkl

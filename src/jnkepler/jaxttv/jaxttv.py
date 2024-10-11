@@ -38,7 +38,7 @@ class Nbody:
 
 class JaxTTV(Nbody):
     """ main class for TTV analysis """
-    def __init__(self, t_start, t_end, dt, nitr_kepler=3, transit_time_method='newton-raphson', nitr_transit=5):
+    def __init__(self, t_start, t_end, dt, tcobs, p_init, errorobs=None, print_info=True, nitr_kepler=3, transit_time_method='newton-raphson', nitr_transit=5):
         """ initialization
 
             Args:
@@ -49,10 +49,36 @@ class JaxTTV(Nbody):
                 transit_time_method: Newton-Raphson or interpolation (latter not fully tested)
                 nitr_transit: number of iterations in transit-finding loop (only for Newton-Raphson)
 
+            Attributes:
+                transit_time_method: algorithm for transit time computation 
+                nit_transit: number of Newton-Raphson iterations in computing transit times
+                nplanet: number of transiting planets
+                p_init: initial guess for mean orbital periods for tracking transit epochs
+                tcobs: list of observed transit time arrays
+                tcobs_flatten: 1D flattend version of tcobs
+                errorobs: list of timing error arrays
+                errorobs_flatten: 1D flattend version of errorobs
+                pidx: index to specify planet in tcobs_flatten and errorobs_flatten (starting from 1)
+                tcobs_linear: list of arrays of linear transit times calculated from the first transit time and p_init
+
         """
         super(JaxTTV, self).__init__(t_start, t_end, dt, nitr_kepler=nitr_kepler)
+
+        tcobs, tcobs_flatten, nplanet, p_init, errorobs, errorobs_flatten, pidx, tcobs_linear \
+            = self.set_tcobs(tcobs, p_init, errorobs=errorobs, print_info=print_info)
+
+        if transit_time_method != "newton-raphson":
+            warnings.warn("transit_time_method other than newton-raphson is not well tested.")
         self.transit_time_method = transit_time_method
         self.nitr_transit = nitr_transit
+        self.nplanet = nplanet
+        self.p_init = p_init
+        self.tcobs = tcobs
+        self.tcobs_flatten = tcobs_flatten
+        self.errorobs = errorobs
+        self.errorobs_flatten = errorobs_flatten
+        self.pidx = pidx 
+        self.tcobs_linear = tcobs_linear
 
     def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
         """ set observed transit times
@@ -66,22 +92,19 @@ class JaxTTV(Nbody):
                 errorobs: transit time error (currently assumed to be Gaussian), same format as tcobs
 
         """
-        self.tcobs = tcobs
-        self.tcobs_flatten = np.hstack([t for t in tcobs])
-        self.nplanet = len(tcobs)
-        self.p_init = p_init
+        tcobs = [np.array(t) for t in tcobs]
+        tcobs_flatten = np.hstack([t for t in tcobs])
+        nplanet = len(tcobs)
         if errorobs is None:
-            self.errorobs = None
-            self.errorobs_flatten = jnp.ones_like(self.tcobs_flatten)
+            errorobs_flatten = jnp.ones_like(tcobs_flatten)
         else:
-            self.errorobs = errorobs
-            self.errorobs_flatten = np.hstack([e for e in errorobs])
+            errorobs_flatten = np.hstack([e for e in errorobs])
 
-        pidx, tcobs_linear, ttvamp = np.array([]), np.array([]), np.array([])
+        pidx, tcobs_linear = np.array([]), np.array([])
         for j in range(len(tcobs)):
             tc = tcobs[j]
             if len(tc) == 0: 
-                continue
+                raise ValueError("Elements of tcobs should have length > 0.")
             elif len(tc) == 1:
                 pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
                 tc_linear = tc[0]
@@ -93,26 +116,21 @@ class JaxTTV(Nbody):
                 tc_linear = t0fit + m * pfit
                 tcobs_linear = np.r_[tcobs_linear, tc_linear]
 
-            ttv = tc - tc_linear
-            ttvamp = np.r_[ttvamp, np.max(ttv)-np.min(ttv)]
-
-        self.pidx = pidx
-        self.tcobs_linear = tcobs_linear
-        self.ttvamp = ttvamp
-
         if print_info:
             print ("# integration starts at:".ljust(35) + "%.2f"%self.t_start)
-            print ("# first transit time in data:".ljust(35) + "%.2f"%np.min(self.tcobs_flatten))
-            print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(self.tcobs_flatten))
+            print ("# first transit time in data:".ljust(35) + "%.2f"%np.min(tcobs_flatten))
+            print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(tcobs_flatten))
             print ("# integration ends at:".ljust(35) + "%.2f"%self.t_end)
             print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
             if np.nanmin(p_init) / self.dt < 20.:
                 warnings.warn("time step may be too large.")
             print ()
-            print ("# number of transiting planets:".ljust(37) + "%d"%self.nplanet)
+            print ("# number of transiting planets:".ljust(37) + "%d"%nplanet)
 
-        assert self.t_start < np.min(self.tcobs_flatten), "t_start seems too large compared to the first transit time in data."
-        assert np.max(self.tcobs_flatten) < self.t_end, "t_end seems too small compared to the last transit time in data."
+        assert self.t_start < np.min(tcobs_flatten), "t_start seems too large compared to the first transit time in data."
+        assert np.max(tcobs_flatten) < self.t_end, "t_end seems too small compared to the last transit time in data."
+
+        return tcobs, tcobs_flatten, nplanet, p_init, errorobs, errorobs_flatten, pidx, tcobs_linear
 
     def linear_ephemeris(self):
         """ (Re)derive linear ephemeris when necessary
