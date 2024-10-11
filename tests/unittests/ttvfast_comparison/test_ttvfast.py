@@ -44,8 +44,8 @@ def init_jaxttv(ttvfast_results, t_start, t_end, dt, npl):
         p_init.append(p)
     p_init = np.array(p_init)
 
-    jttv = JaxTTV(t_start, t_end, dt)
-    jttv.set_tcobs(tcobs, p_init)
+    jttv = JaxTTV(t_start, t_end, dt, tcobs, p_init)
+    #jttv.set_tcobs(tcobs, p_init)
 
     return jttv, np.array(list(itertools.chain.from_iterable(tcobs)))
 
