@@ -106,7 +106,7 @@ class JaxTTV(Nbody):
             print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(self.tcobs_flatten))
             print ("# integration ends at:".ljust(35) + "%.2f"%self.t_end)
             print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
-            if np.nanmin(p_init)/self.dt < 20.:
+            if np.nanmin(p_init) / self.dt < 20.:
                 warnings.warn("time step may be too large.")
             print ()
             print ("# number of transiting planets:".ljust(37) + "%d"%self.nplanet)
@@ -574,8 +574,7 @@ def integrate_orbits_hermite(xjac0, vjac0, masses, times):
     de_frac = get_energy_diff(xvacm, masses)
     return t, xcm, vcm, acm, de_frac
 
-
-def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin=None, p_lin=None, 
+def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
                tcmodelunclist=None, tmargin=None, save=None, marker=None, ylims=None, ylims_residual=None,
                unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
     """ plot transit time model
@@ -594,9 +593,80 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin=None, p_lin=None,
             ylims, ylims_residual: y ranges in the plots
 
     """
+    for j, (tcmodel, tcobs, errorobs, t0, p) in enumerate(zip(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin)):
+        tcmodel, tcobs, errorobs = np.array(tcmodel), np.array(tcobs), np.array(errorobs)
+
+        #plt.figure(figsize=(8,5))
+        fig, (ax, ax2) = plt.subplots(2, 1, figsize=(10,6), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
+        if tmargin is not None:
+            plt.xlim(np.min(tcobs)-tmargin, np.max(tcobs)+tmargin)
+        ax.set_ylabel(ylabel)
+        ax2.set_xlabel(xlabel)
+        tnumobs = np.round((tcobs - t0)/p).astype(int)
+        tnummodel = np.round((tcmodel - t0)/p).astype(int)
+        ax.errorbar(tcobs, (tcobs-t0-tnumobs*p)*unit, yerr=errorobs*unit, zorder=1000,
+                     fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
+        #idxm = tcmodel < np.max(tcobs) + tmargin
+        idxm = tcmodel > 0
+        tlin = t0 + tnummodel * p
+        ax.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=1, mfc='white', color='steelblue',
+                 zorder=-1000, label='model', alpha=0.9)
+        if tcmodelunclist is not None:
+            munc = tcmodelunclist[j]
+            ax.fill_between(tcmodel[idxm], (tcmodel-munc-tlin)[idxm]*unit,
+                            (tcmodel+munc-tlin)[idxm]*unit,
+                             lw=1, color='steelblue', zorder=-1000, alpha=0.2)
+        ax.set_title("planet %d"%(j+1))
+        if ylims is not None and len(ylims)==len(t0_lin):
+            ax2.set_ylim(ylims[j])
+
+        idxm = findidx_map(tcmodel, tcobs) 
+        ax2.errorbar(tcobs, (tcobs-tcmodel[idxm])*unit, yerr=errorobs*unit, zorder=1000,
+                     fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
+        ax2.axhline(y=0, color='steelblue', alpha=0.6)
+        ax2.set_ylabel("residual (min)")
+        if ylims_residual is not None and len(ylims_residual)==len(t0_lin):
+            ax2.set_ylim(ylims_residual[j])
+
+        # change legend order
+        handles, labels = ax.get_legend_handles_labels()
+        order = [1,0]
+        ax.legend([handles[idx] for idx in order],[labels[idx] for idx in order],
+                   loc='upper left', bbox_to_anchor=(1,1))
+
+        fig.tight_layout(pad=0.05)
+
+        if save is not None:
+            plt.savefig(save+"_planet%d.png"%(j+1), dpi=200, bbox_inches="tight")
+'''
+def plot_model(self, tcmodellist, tcobslist=None, errorobslist=None, t0_lin=None, p_lin=None, 
+               tcmodelunclist=None, tmargin=None, save=None, marker=None, ylims=None, ylims_residual=None,
+               unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
+    """ plot transit time model
+
+        Args:
+            tcmodellist: list of the arrays of model transit times for each planet
+            tcobslist: list of the arrays of observed transit times for each planet
+            errorobslist: list of the arrays of observed transit time errors for each planet
+            t0_lin, p_lin: linear ephemeris used to show TTVs (n_planet,)
+            tcmodelunclist: model uncertainty (same format as tcmodellist)
+            tmargin: margin in x axis
+            save: if not None, plot is saved as "save_planet#.png"
+            marker: marker for model
+            unit: TTV unit (defaults to minutes)
+            ylabel, xlabel: axis labels in the plots
+            ylims, ylims_residual: y ranges in the plots
+
+    """
+    if tcobslist is None:
+        tcobslist = self.tcobs
+    
+    if errorobslist is None:
+        errorobslist = self.errorobs
+
     if (t0_lin is None) or (p_lin is None):
-        t0_lin, p_lin = jttv.linear_ephemeris()
-        print ("Using t0 and P from a linear fit to the observed transit times.")
+        t0_lin, p_lin = self.linear_ephemeris()
+        warnings.warn("using t0 and P from a linear fit to the observed transit times.")
 
     for j, (tcmodel, tcobs, errorobs, t0, p) in enumerate(zip(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin)):
         tcmodel, tcobs, errorobs = np.array(tcmodel), np.array(tcobs), np.array(errorobs)
@@ -641,7 +711,8 @@ def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin=None, p_lin=None,
 
         if save is not None:
             plt.savefig(save+"_planet%d.png"%(j+1), dpi=200, bbox_inches="tight")
-
+'''
+            
 def get_means_and_stds(models):
     """ get mean and standard deviation of the models
 
