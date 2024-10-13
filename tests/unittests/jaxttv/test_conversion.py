@@ -5,23 +5,21 @@ import pandas as pd
 import numpy as np
 from jnkepler.jaxttv import JaxTTV
 from jnkepler.jaxttv.utils import params_to_elements, convert_elements
-import pkg_resources
-
-#%%
-path = pkg_resources.resource_filename('jnkepler', 'data/')
+import importlib_resources
+path = importlib_resources.files('jnkepler').joinpath('data')
 
 #%%
 def test_convert_elements():
     p_init = [45.155305, 85.31646, 130.17809]
-    d = pd.read_csv(path+"kep51_ttv.txt", delim_whitespace=True, header=None, names=['tnum', 'tc', 'tcerr', 'dnum', 'planum'])
+    d = pd.read_csv(path/"kep51_ttv.txt", sep='\s+', header=None, names=['tnum', 'tc', 'tcerr', 'dnum', 'planum'])
     tcobs = [np.array(d.tc[d.planum==j+1]) for j in range(3)]
-    params_jttv = np.loadtxt(path+"kep51_dt1.0_start155.00_end2950.00_params.txt")
+    params_jttv = np.loadtxt(path/"kep51_dt1.0_start155.00_end2950.00_params.txt")
     t_start = 155.
     elements, masses = params_to_elements(params_jttv, len(p_init))
     _, period, ecc, inc, omega, lnode, ma = convert_elements(elements, masses, t_start, WHsplit=True)[0]
     p = {'period': period, 'ecc': ecc, 'cosi': np.cos(inc), 'omega': omega, 'lnode': lnode, 'ma': ma}
 
-    ptrue = pd.read_csv(path+"kep51_dt1.0_start155.00_end2950.00_pdict_ttvfast.csv")
+    ptrue = pd.read_csv(path/"kep51_dt1.0_start155.00_end2950.00_pdict_ttvfast.csv")
 
     assert p['period'] == pytest.approx(np.array(ptrue[['period%d'%i for i in range(len(p_init))]])[0])
     assert p['ecc'] == pytest.approx(np.array(ptrue[['e%d'%i for i in range(len(p_init))]])[0])

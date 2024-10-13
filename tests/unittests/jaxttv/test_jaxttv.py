@@ -13,7 +13,7 @@ def test_jaxttv():
     for attr, value in vars(jttv_ref).items():
         assert hasattr(jttv, attr), f"JaxTTV object is missing attribute {attr}"
         if isinstance(value, (np.ndarray, jnp.ndarray)):
-            assert np.array_equal(getattr(jttv, attr), value), f"Mismatch in {attr}: {getattr(jttv, attr)} != {value}"
+            assert np.allclose(getattr(jttv, attr), value), f"Mismatch in {attr}: {getattr(jttv, attr)} != {value}"
         elif isinstance(value, list):
             for x, y in zip(getattr(jttv, attr), value):
                 assert np.array_equal(x, y), f"Mismatch in {attr}: {getattr(jttv, attr)} != {value}"

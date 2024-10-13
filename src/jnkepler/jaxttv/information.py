@@ -22,7 +22,7 @@ def model_pdic(jttv, pdic, ms=1., lnmass=False):
     mass = jnp.exp(pdic['lnmass']) if lnmass else pdic['mass']
     elements = jnp.stack([period, ecosw, esinw, cosi, lnode, tic]).T 
     masses = jnp.hstack([ms, mass])
-    return jttv.get_ttvs(elements, masses)[0]
+    return jttv.get_transit_times_obs(elements, masses)[0]
 
 
 def information(jttv, pdic, keys):
