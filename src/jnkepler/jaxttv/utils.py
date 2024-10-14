@@ -1,21 +1,95 @@
 __all__ = [
     "initialize_jacobi_xv", "get_energy_diff", "get_energy_diff_jac",
-    "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map"
+    "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map", "params_to_dict",
 ]
 
 import jax.numpy as jnp
 from jax import jit, vmap, config
 from jax.lax import scan
 from .markley import get_E
-from .conversion import tic_to_u, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
+from .conversion import m_to_u, tic_to_m, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
 #from jax.config import config
 config.update('jax_enable_x64', True)
 
 #%%
 M_earth = 3.0034893e-6
+       
+
+def params_to_dict(params, npl, keys): 
+    pdic = {}
+
+    for i,key in enumerate(keys):
+        pdic[key] = params[i*npl:(i+1)*npl]
+
+    return pdic
 
 
-def initialize_jacobi_xv(elements, masses, t_epoch):
+def initialize_jacobi_xv(par_dict, t_epoch):
+    """ compute initial position/velocity from JaxTTV elements
+        here the elements are interpreted as Jacobi using the total interior mass (see Rein & Tamayo 2015)
+
+        Args:
+            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
+            masses: masses of the bodies (Nbody,)
+            t_epoch: epoch at which elements are defined
+
+        Returns:
+            Jacobi positions and velocities at t_epoch (Norbit, xyz)
+
+    """
+    keys = par_dict.keys()
+
+    period = par_dict["period"]
+
+    if "ecosw" in keys and "esinw" in keys:
+        ecosw, esinw = par_dict['ecosw'], par_dict['esinw']
+        ecc = jnp.sqrt(ecosw**2 + esinw**2)
+        omega = jnp.arctan2(esinw, ecosw)
+    elif "ecc" in keys and "omega" in keys:
+        ecc, omega = par_dict["ecc"], par_dict["omega"]
+    else:
+        raise ValueError("Either (ecosw, esinw) or (ecc, omega) needs to be provided.")
+
+    if "cosi" in keys:
+        inc = jnp.arccos(par_dict["cosi"])
+    else:
+        inc = jnp.arccos(period * 0.)
+    
+    if "lnode" in keys:
+        lnode = par_dict["lnode"]
+    else:
+        lnode = period * 0.
+
+    if "tic" in keys:
+        ma = tic_to_m(par_dict["tic"], period, ecc, omega, t_epoch)
+    elif "ma" in keys:
+        ma = par_dict["ma"]
+    else:
+        raise ValueError("Either tic (time of inf. conjunction) or ma (mean anom.) needs to be provided.")
+    u = m_to_u(ma, ecc) # eccentric anomaly
+
+    if "m_star" in keys:
+        ms = par_dict["m_star"]
+    else:
+        ms = 1.
+
+    if "pmass" in keys:
+        masses = jnp.hstack([ms, par_dict['pmass']])
+    elif "lnpmass" in keys:
+        masses = jnp.hstack([ms, jnp.exp(par_dict['lnpmass'])])
+    else:
+        raise ValueError("Either pmass (solar unit) or lnpmass needs to be provided.")
+
+    xjac, vjac = [], []
+    for j in range(len(period)):
+        xj, vj = elements_to_xv(period[j], ecc[j], inc[j], omega[j], lnode[j], u[j], jnp.sum(masses[:j+2]))
+        xjac.append(xj)
+        vjac.append(vj)
+
+    return jnp.array(xjac), jnp.array(vjac), masses
+
+
+def _initialize_jacobi_xv(elements, masses, t_epoch):
     """ compute initial position/velocity from JaxTTV elements
         here the elements are interpreted as Jacobi using the total interior mass (see Rein & Tamayo 2015)
 
@@ -30,7 +104,7 @@ def initialize_jacobi_xv(elements, masses, t_epoch):
     """
     xjac, vjac = [], []
     for j in range(len(elements)):
-        porb, ecosw, esinw, cosi, lnode, tic = elements[j]
+        porb, ecosw, esinw, cosi, lnode, ma = elements[j]
         ecc = jnp.sqrt(ecosw**2 + esinw**2)
         omega = jnp.arctan2(esinw, ecosw)
         inc = jnp.arccos(cosi)
@@ -175,7 +249,7 @@ def params_to_elements(params, npl):
 
         Returns:
             elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
-            masses: masses of the bodies (Nbody,)
+            masses: ln(masses) of the bodies (Nbody,)
 
     """
     elements = jnp.array(params[:-npl].reshape(npl, -1))

@@ -4,7 +4,7 @@ import glob
 import pandas as pd
 import numpy as np
 from jnkepler.jaxttv import JaxTTV
-from jnkepler.jaxttv.utils import params_to_elements
+from jnkepler.jaxttv.utils import params_to_elements, elements_to_pdic
 from jax import grad, jit
 import jax.numpy as jnp
 import pkg_resources
@@ -26,10 +26,12 @@ def test_runtime():
     t_start, t_end = 155., 2950.
     jttv = JaxTTV(t_start, t_end, dt, tcobs, p_init, print_info=False)
     elements, masses = params_to_elements(params_test, jttv.nplanet)
-    _, _ = jttv.get_transit_times_obs(elements, masses)
+    pdic = elements_to_pdic(elements, masses)
+    pdic['mass_ratio'] = pdic['mass']
+    _, _ = jttv.get_transit_times_obs(pdic)
 
     names, loop = {**globals(), **locals()}, 200
-    result = timeit.timeit('jttv.get_transit_times_obs(elements, masses)', globals=names, number=loop)
+    result = timeit.timeit('jttv.get_transit_times_obs(pdic)', globals=names, number=loop)
     result_str = "%.2f ms per loop (%d loops)"%(result / loop * 1000, loop)
     print ("# JaxTTV (NR) timeit:", result_str)
 
@@ -45,11 +47,11 @@ def test_runtime():
     print ("# JaxTTV (interp) timeit:", result_str)
     """
 
-    func = lambda elements, masses: jnp.sum(jttv.get_transit_times_obs(elements, masses)[0])
-    gfunc = jit(grad(func, argnums=(0,1)))
-    _ = gfunc(elements, masses)
+    func = lambda pdic: jnp.sum(jttv.get_transit_times_obs(pdic)[0])
+    gfunc = jit(grad(func, argnums=(0,)))
+    _ = gfunc(pdic)
     names = {**globals(), **locals()}
-    result = timeit.timeit('gfunc(elements, masses)', globals=names, number=loop)
+    result = timeit.timeit('gfunc(pdic)', globals=names, number=loop)
     result_str = "%.2f ms per loop (%d loops)"%(result / loop * 1000, loop)
     print ("# JaxTTV (NR) gradient timeit:", result_str)
 

@@ -159,7 +159,7 @@ class JaxTTV(Nbody):
         return np.array(t0_new), np.array(p_new)
 
     @partial(jit, static_argnums=(0,))
-    def get_transit_times_obs(self, elements, masses):
+    def get_transit_times_obs(self, par_dict):
         """ compute model transit times (jitted version)
         This function returns only transit times that are closest to the observed ones.
         To get all the transit times, use get_transit_times_all instead.
@@ -172,8 +172,8 @@ class JaxTTV(Nbody):
                 1D flattened array of transit times
                 fractional energy change
 
-        """
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
+        """       
+        xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, self.t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
         orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
         tcobs1d = self.tcobs_flatten # 1D array of observed transit times
@@ -186,7 +186,7 @@ class JaxTTV(Nbody):
 
 
     @partial(jit, static_argnums=(0,))
-    def get_transit_times_and_rvs(self, elements, masses, times_rv):
+    def get_transit_times_and_rvs_obs(self, par_dict, times_rv):
         """ compute model transit times and stellar RVs
 
             Args:
@@ -200,7 +200,7 @@ class JaxTTV(Nbody):
                 fractional energy change
 
         """
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
+        xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, self.t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
         orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
         tcobs1d = self.tcobs_flatten # 1D array of observed transit times
@@ -252,8 +252,8 @@ class JaxTTV(Nbody):
 
         return pidxall, tcall_linear, tcall_linear_flatten
     
-    @partial(jit, static_argnums=(0,3,4,5))
-    def get_transit_times_all(self, elements, masses, t_start=None, t_end=None, dt=None):
+    @partial(jit, static_argnums=(0,2,3,4))
+    def get_transit_times_all(self, par_dict, t_start=None, t_end=None, dt=None):
         """compute all model transit times between t_start and t_end
 
         This function is slower than get_ttvs and should not be used for fitting.
@@ -274,7 +274,7 @@ class JaxTTV(Nbody):
             times, t_start, dt, t_end = jnp.arange(t_start, t_end, dt), t_start, dt, t_end
 
         # compute 1D flattend transit times
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, t_start) # initial Jacobi position/velocity
+        xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, times, nitr=self.nitr_kepler) # integration
         orbit_idx, _, tcobs1d = self.tcall_linear(t_start, t_end)
         orbit_idx = orbit_idx.astype(int) - 1 # start from 0
@@ -286,7 +286,7 @@ class JaxTTV(Nbody):
 
         return transit_times, ediff, orbit_idx
     
-    def get_transit_times_all_list(self, elements, masses, truncate=True):
+    def get_transit_times_all_list(self, par_dict, truncate=True):
         """compute all transit times and retunrs a list
         
             Args:
@@ -299,7 +299,7 @@ class JaxTTV(Nbody):
                 each element is an array of model transit times (length varies for each planet)
         
         """
-        tc_flatten, _, orbit_idx = self.get_transit_times_all(elements, masses)
+        tc_flatten, _, orbit_idx = self.get_transit_times_all(par_dict)
         tc_list = []
         for j in range(self.nplanet):
             tcj = tc_flatten[orbit_idx==j]
