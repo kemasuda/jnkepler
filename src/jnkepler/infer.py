@@ -1,18 +1,17 @@
 
-__all__ = ["optim_svi", "ttv_default_parameter_bounds", "ttv_optim_curve_fit", "scale_pdic", "unscale_pdic"]
+__all__ = ["optim_svi", "fit_t_distribution"]
 
-from jax import random, jacrev
+from jax import random
 import numpyro
+import numpyro.distributions as dist
 from numpyro.infer import SVI, Trace_ELBO
 from numpyro.infer.autoguide import AutoLaplaceApproximation
 from numpyro.infer.initialization import init_to_value, init_to_sample
+from scipy.stats import t as tdist
+from scipy.stats import norm
 import numpy as np
 import jax.numpy as jnp
-from scipy.optimize import curve_fit
-from copy import deepcopy
-import time
-from jnkepler.jaxttv.utils import params_to_elements
-
+import matplotlib.pyplot as plt
 
 def optim_svi(numpyro_model, step_size, num_steps, p_initial=None):
     """optimization using Stochastic Variational Inference (SVI)
@@ -45,111 +44,85 @@ def optim_svi(numpyro_model, step_size, num_steps, p_initial=None):
     return p_fit
 
 
-def ttv_default_parameter_bounds(jttv, dtic=0.05, dp_frac=1e-2, emax=0.2, mmin=1e-7, mmax=1e-3):
-    """get parameter bounds for TTV optimization
-
-        Args:
-            jttv: JaxTTV object
-
-        Returns:
-            dictionary of (lower bound array, upper bound array)
-
-    """
-    npl = jttv.nplanet
-    t0_guess = np.array([tcobs_[0] for tcobs_ in jttv.tcobs])
-    p_guess = np.array(jttv.p_init)
-
-    ones = np.ones(npl)
-    evector_shift = 1e-2 # avoid (0,0) for initial (ecosw, esinw)
-    param_bounds = {
-        "tic": [t0_guess - dtic, t0_guess + dtic],
-        "period": [p_guess * (1 - dp_frac), p_guess * (1 + dp_frac)],
-        "ecosw": [-emax * ones, emax * ones - evector_shift],
-        "esinw": [-emax * ones, emax * ones - evector_shift],
-        "lnmass": [np.log(mmin) * ones, np.log(mmax) * ones],
-        "mass": [mmin * ones, mmax * ones],
-    }
-
-    return param_bounds
-
-
-def scale_pdic(pdic, param_bounds):
-    """scale parameters using bounds
+def fit_t_distribution(y, plot=True, fit_mean=False):
+    """fit Student's t distribution to a sample y
     
         Args:
-            pdic: dict of physical parameters
-            param_bounds: dictionary of (lower bound array, upper bound array)
-
-        Returns:
-            dict of scaled parameters
+            y: 1D array
+            plot: if True, plot results
+            fit_mean: if True, mean of the distribution is also fitted
+            
+        Returns: 
+            dictionary {
+                lndf_loc: mean of log(dof),
+                lndf_scale: std of log(dof),
+                lnvar_loc: mean of log(variance),
+                lnvar_scale: std of log(variance),
+                mean_loc: mean of mean (if fitted),
+                mean_scale: std of mean (if fitted)
+            }
     
     """
-    pdic_scaled = {}
-    for key in param_bounds.keys():
-        pdic_scaled[key+"_scaled"] = (pdic[key] - param_bounds[key][0]) / (param_bounds[key][1] - param_bounds[key][0])
-    return pdic_scaled
+    def model(y):
+        logdf = numpyro.sample("lndf", dist.Uniform(jnp.log(0.1), jnp.log(100)))
+        logvar = numpyro.sample("lnvar", dist.Uniform(-2, 10))
+        df = numpyro.deterministic("df", jnp.exp(logdf))
+        v1 = numpyro.deterministic("v1", jnp.exp(logvar))
+        if fit_mean:
+            mean = numpyro.sample("mean", dist.Uniform(-jnp.std(y), jnp.std(y)))
+            numpyro.sample("obs", dist.StudentT(loc=mean, scale=jnp.sqrt(v1), df=df), obs=y)
+        else:
+            numpyro.sample("obs", dist.StudentT(scale=jnp.sqrt(v1), df=df), obs=y)
 
+    kernel = numpyro.infer.NUTS(model)
+    mcmc = numpyro.infer.MCMC(kernel, num_warmup=500, num_samples=500)
+    rng_key = random.PRNGKey(0)
+    mcmc.run(rng_key, y)
+    mcmc.print_summary()
 
-def unscale_pdic(pdic_scaled, param_bounds):
-    """unscale parameters using bounds
-    
-        Args:
-            pdic: dict of scaled parameters
-            param_bounds: dictionary of (lower bound array, upper bound array)
-
-        Returns:
-            dict of physical parameters in original scales
-    
-    """
-    pdic = {}
-    for key in param_bounds.keys():
-        pdic[key] = param_bounds[key][0] + (param_bounds[key][1] - param_bounds[key][0]) * pdic_scaled[key+"_scaled"]
-    return pdic
-
-
-def ttv_optim_curve_fit(jttv, param_bounds_, p_init=None, jac=False):
-    """simple TTV fit using scipy.curve_fit with bounds
-
-        Args:
-            jttv: JaxTTV object
-            param_bounds_: bounds for parameters, 0: lower, 1: upper
-            p_init: initial parameter values (if None, center of lower/upper bounds)
-            jac: if True jacrev(model) is used
-
-        Returns:
-            JaxTTV parameter array 
-
-    """
-    npl = jttv.nplanet 
-    param_bounds = deepcopy(param_bounds_)
-
-    if "cosi" not in param_bounds.keys() or "lnode" not in param_bounds.keys():
-        print ("# bounds for cosi/lnode not provided: assuming coplanar orbits...")
-        ones = np.ones_like(param_bounds["period"][0])
-        param_bounds["cosi"] = [-1e-6 * ones, 1e-6 * ones]
-        param_bounds["lnode"] = [-1e-6 * ones, 1e-6 * ones]
-    
-    keys = ['period', 'ecosw', 'esinw', 'cosi', 'lnode', 'tic']
-    params_lower = np.hstack([np.array([[param_bounds[key][0][j] for key in keys] for j in range(npl)]).ravel(), param_bounds["lnmass"][0]])
-    params_upper = np.hstack([np.array([[param_bounds[key][1][j] for key in keys] for j in range(npl)]).ravel(), param_bounds["lnmass"][1]])
-    bounds = (params_lower, params_upper)
-
-    if p_init is None:
-        p_init = 0.5 * (params_lower + params_upper)
-
-    model = lambda p: jttv.get_ttvs(*params_to_elements(p, npl))[0]
-    func = lambda x, *params: model(jnp.array(params))
-    objective = lambda p: jnp.sum( (model(p) - jttv.tcobs_flatten)**2 / jttv.errorobs_flatten**2 )
-    if jac:
-        jacmodel = jacrev(model)
-        jacfunc = lambda x, *params: jacmodel(jnp.array(params))
+    samples = mcmc.get_samples()
+    lndf, lnvar = np.mean(samples['lndf']), np.mean(samples['lnvar'])
+    lndf_sd, lnvar_sd = np.std(samples['lndf']), np.std(samples['lnvar'])
+    pout = {'lndf_loc': lndf, 'lndf_scale': lndf_sd, 'lnvar_loc': lnvar, 'lnvar_scale': lnvar_sd}
+    if fit_mean:
+        mean, mean_sd = np.mean(samples['mean']), np.std(samples['mean'])
+        pout['mean_loc'] = mean
+        pout['mean_scale'] = mean_sd
     else:
-        jacfunc = None
+        mean = 0.
 
-    print ("# running least squares optimization...")
-    start_time = time.time()
-    popt, pcov = curve_fit(func, None, jttv.tcobs_flatten, p0=p_init, sigma=jttv.errorobs_flatten, bounds=bounds, jac=jacfunc)
-    print ("# objective function: %.2f --> %.2f (%d data)"%(objective(p_init), objective(popt), len(jttv.tcobs_flatten)))
-    print ("# elapsed time: %.1f sec" % (time.time()-start_time))
+    if plot:
+        sd = np.std(y)
+        fig, ax = plt.subplots(1, 2, figsize=(16,4))
+        ax[1].set_yscale("log")
+        ax[1].set_ylabel("PDF")
+        ax[0].set_ylabel("CDF")
+        ax[0].set_xlabel("residual / assigned error")
+        ax[1].set_xlabel("residual / assigned error")
+        ax[1].hist(y, histtype='step', lw=3, alpha=0.6, density=True, color='gray')
+        ymin, ymax = plt.gca().get_ylim()
+        ax[1].set_ylim(ymin/5., ymax*1.5)
+        x0 = np.linspace(-5, 5, 100)
+        ax[1].plot(x0, norm(scale=sd).pdf(x0), lw=1, color='C0', ls='dashed', 
+                label='normal, $\mathrm{SD}=%.2f$'%sd)
+        ax[1].plot(x0, norm.pdf(x0), lw=1, color='C0', ls='dotted', 
+                label='normal, $\mathrm{SD}=1$')
+        ax[1].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).pdf(x0), 
+        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)'%(lndf, lnvar, mean))
+        #ax[1].legend(loc='upper right', bbox_to_anchor=(1.5,1))
 
-    return popt
+        #ax[0].hist(y, bins=len(y), histtype='step', lw=3, alpha=0.6, density=True, cumulative=True, color='red')
+        ysum = np.ones_like(y)
+        hist, edge = np.histogram(y, bins=len(y))
+        ax[0].plot(np.r_[x0[0], edge[0], edge[:-1], edge[-1], x0[-1]], 
+                np.r_[0, 0, np.cumsum(hist)/len(y), 1, 1], lw=3, alpha=0.6, color='gray')
+        #ax[0].plot(np.sort(y), np.cumsum(ysum)/len(ysum), lw=3, alpha=0.6, color='gray')
+        ax[0].plot(x0, norm(loc=0, scale=sd).cdf(x0), lw=1, color='C0', ls='dashed', 
+                label='normal, $\mathrm{SD}=%.2f$'%sd)
+        ax[0].plot(x0, norm.cdf(x0), lw=1, color='C0', ls='dotted', 
+                label='normal, $\mathrm{SD}=1$')
+        ax[0].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).cdf(x0), 
+        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)'%(lndf, lnvar, mean))
+        ax[0].legend(loc='upper left', fontsize=14)
+
+    return pout
