@@ -1,4 +1,4 @@
-__all__ = ["Nbody", "JaxTTV", "plot_model", "get_means_and_stds"]
+__all__ = ["Nbody", "JaxTTV"]
 
 
 import numpy as np
@@ -9,10 +9,11 @@ from functools import partial
 from copy import deepcopy
 from .utils import *
 from .conversion import *
-from .findtransit import find_transit_times_single, find_transit_times_all, find_transit_times_kepler_all
+from .findtransit import find_transit_times_all, find_transit_times_kepler_all
 from .symplectic import integrate_xv, kepler_step_map
 from .hermite4 import integrate_xv as integrate_xv_hermite4
 from .rv import *
+from ..infer import fit_t_distribution
 from jax import jit, grad, config
 config.update('jax_enable_x64', True)
 
@@ -38,7 +39,7 @@ class Nbody:
 
 class JaxTTV(Nbody):
     """ main class for TTV analysis """
-    def __init__(self, t_start, t_end, dt, nitr_kepler=3, transit_time_method='newton-raphson', nitr_transit=5):
+    def __init__(self, t_start, t_end, dt, tcobs, p_init, errorobs=None, print_info=True, nitr_kepler=3, transit_time_method='newton-raphson', nitr_transit=5):
         """ initialization
 
             Args:
@@ -49,10 +50,36 @@ class JaxTTV(Nbody):
                 transit_time_method: Newton-Raphson or interpolation (latter not fully tested)
                 nitr_transit: number of iterations in transit-finding loop (only for Newton-Raphson)
 
+            Attributes:
+                transit_time_method: algorithm for transit time computation 
+                nit_transit: number of Newton-Raphson iterations in computing transit times
+                nplanet: number of transiting planets
+                p_init: initial guess for mean orbital periods for tracking transit epochs
+                tcobs: list of observed transit time arrays
+                tcobs_flatten: 1D flattend version of tcobs
+                errorobs: list of timing error arrays
+                errorobs_flatten: 1D flattend version of errorobs
+                pidx: index to specify planet in tcobs_flatten and errorobs_flatten (starting from 1)
+                tcobs_linear: list of arrays of linear transit times calculated from the first transit time and p_init
+
         """
         super(JaxTTV, self).__init__(t_start, t_end, dt, nitr_kepler=nitr_kepler)
+
+        tcobs, tcobs_flatten, nplanet, p_init, errorobs, errorobs_flatten, pidx, tcobs_linear \
+            = self.set_tcobs(tcobs, p_init, errorobs=errorobs, print_info=print_info)
+
+        if transit_time_method != "newton-raphson":
+            warnings.warn("transit_time_method other than newton-raphson is not well tested.")
         self.transit_time_method = transit_time_method
         self.nitr_transit = nitr_transit
+        self.nplanet = nplanet
+        self.p_init = p_init
+        self.tcobs = tcobs
+        self.tcobs_flatten = tcobs_flatten
+        self.errorobs = errorobs
+        self.errorobs_flatten = errorobs_flatten
+        self.pidx = pidx 
+        self.tcobs_linear = tcobs_linear
 
     def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
         """ set observed transit times
@@ -65,23 +92,23 @@ class JaxTTV(Nbody):
                 p_init: initial guess for the mean orbital period of each planet
                 errorobs: transit time error (currently assumed to be Gaussian), same format as tcobs
 
-        """
-        self.tcobs = tcobs
-        self.tcobs_flatten = np.hstack([t for t in tcobs])
-        self.nplanet = len(tcobs)
-        self.p_init = p_init
-        if errorobs is None:
-            self.errorobs = None
-            self.errorobs_flatten = jnp.ones_like(self.tcobs_flatten)
-        else:
-            self.errorobs = errorobs
-            self.errorobs_flatten = np.hstack([e for e in errorobs])
+            Returns:
+                attributes of JaxTTV class
 
-        pidx, tcobs_linear, ttvamp = np.array([]), np.array([]), np.array([])
+        """
+        tcobs = [np.array(t) for t in tcobs]
+        tcobs_flatten = np.hstack([t for t in tcobs])
+        nplanet = len(tcobs)
+        if errorobs is None:
+            errorobs_flatten = jnp.ones_like(tcobs_flatten)
+        else:
+            errorobs_flatten = np.hstack([e for e in errorobs])
+
+        pidx, tcobs_linear = np.array([]), np.array([])
         for j in range(len(tcobs)):
             tc = tcobs[j]
             if len(tc) == 0: 
-                continue
+                raise ValueError("Elements of tcobs should have length > 0.")
             elif len(tc) == 1:
                 pidx = np.r_[pidx, np.ones_like(tc)*(j+1)]
                 tc_linear = tc[0]
@@ -93,26 +120,21 @@ class JaxTTV(Nbody):
                 tc_linear = t0fit + m * pfit
                 tcobs_linear = np.r_[tcobs_linear, tc_linear]
 
-            ttv = tc - tc_linear
-            ttvamp = np.r_[ttvamp, np.max(ttv)-np.min(ttv)]
-
-        self.pidx = pidx
-        self.tcobs_linear = tcobs_linear
-        self.ttvamp = ttvamp
-
         if print_info:
+            print ("# number of transiting planets:".ljust(35) + "%d"%nplanet)
             print ("# integration starts at:".ljust(35) + "%.2f"%self.t_start)
-            print ("# first transit time in data:".ljust(35) + "%.2f"%np.min(self.tcobs_flatten))
-            print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(self.tcobs_flatten))
+            print ("# first transit time in data:".ljust(35) + "%.2f"%np.min(tcobs_flatten))
+            print ("# last transit time in data:".ljust(35) + "%.2f"%np.max(tcobs_flatten))
             print ("# integration ends at:".ljust(35) + "%.2f"%self.t_end)
             print ("# integration time step:".ljust(35) + "%.4f (1/%d of innermost period)"%(self.dt, np.nanmin(p_init)/self.dt))
             if np.nanmin(p_init) / self.dt < 20.:
                 warnings.warn("time step may be too large.")
             print ()
-            print ("# number of transiting planets:".ljust(37) + "%d"%self.nplanet)
 
-        assert self.t_start < np.min(self.tcobs_flatten), "t_start seems too large compared to the first transit time in data."
-        assert np.max(self.tcobs_flatten) < self.t_end, "t_end seems too small compared to the last transit time in data."
+        assert self.t_start < np.min(tcobs_flatten), "t_start seems too large compared to the first transit time in data."
+        assert np.max(tcobs_flatten) < self.t_end, "t_end seems too small compared to the last transit time in data."
+
+        return tcobs, tcobs_flatten, nplanet, p_init, errorobs, errorobs_flatten, pidx, tcobs_linear
 
     def linear_ephemeris(self):
         """ (Re)derive linear ephemeris when necessary
@@ -130,11 +152,67 @@ class JaxTTV(Nbody):
                 pfit, t0fit = np.polyfit(m, tc, deg=1)
             else:
                 pfit, t0fit = self.p_init[j], self.tcobs_linear[j]
-                print ("# ephemeris of planet %d was not updated."%(j+1))
+                warnings.warn("ephemeris of planet %d was not updated."%(j+1))
             t0_new.append(t0fit)
             p_new.append(pfit)
 
         return np.array(t0_new), np.array(p_new)
+
+    @partial(jit, static_argnums=(0,))
+    def get_transit_times_obs(self, elements, masses):
+        """ compute model transit times (jitted version)
+        This function returns only transit times that are closest to the observed ones.
+        To get all the transit times, use get_transit_times_all instead.
+
+            Args:
+                elements: orbital elements in JaxTTV format
+                masses: masses of the bodies (in units of solar mass)
+
+            Returns:
+                1D flattened array of transit times
+                fractional energy change
+
+        """
+        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
+        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
+        orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
+        tcobs1d = self.tcobs_flatten # 1D array of observed transit times
+        if self.transit_time_method == 'newton-raphson':
+            transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
+        else:
+            transit_times = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+        ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
+        return transit_times, ediff
+
+
+    @partial(jit, static_argnums=(0,))
+    def get_transit_times_and_rvs(self, elements, masses, times_rv):
+        """ compute model transit times and stellar RVs
+
+            Args:
+                elements: orbital elements in JaxTTV format
+                masses: masses of the bodies (in units of solar mass)
+                times_rv: times at which stellar RVs are evaluated
+
+            Returns:
+                1D flattened array of transit times
+                1D array of stellar RVs (m/s)
+                fractional energy change
+
+        """
+        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
+        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
+        orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
+        tcobs1d = self.tcobs_flatten # 1D array of observed transit times
+        if self.transit_time_method == 'newton-raphson':
+            transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
+        else:
+            transit_times = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+        ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
+
+        nbodyrv = rv_from_xvjac(times_rv, times, xvjac, masses)
+
+        return transit_times, nbodyrv, ediff
     
     def tcall_linear(self, t_start, t_end, truncate=False):
         """information on all linear transit times between t_start and t_end
@@ -173,62 +251,6 @@ class JaxTTV(Nbody):
         tcall_linear_flatten = np.hstack([t for t in tcall_linear])
 
         return pidxall, tcall_linear, tcall_linear_flatten
-
-    @partial(jit, static_argnums=(0,))
-    def get_ttvs(self, elements, masses):
-        """ compute model transit times (jitted version)
-        This function returns only transit times that are closest to the observed ones.
-        To get all the transit times, use get_transit_times_all instead.
-
-            Args:
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
-
-            Returns:
-                1D flattened array of transit times
-                fractional energy change
-
-        """
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
-        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
-        orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
-        tcobs1d = self.tcobs_flatten # 1D array of observed transit times
-        if self.transit_time_method == 'newton-raphson':
-            transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
-        else:
-            transit_times = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
-        ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
-        return transit_times, ediff
-
-
-    @partial(jit, static_argnums=(0,))
-    def get_ttvs_and_rvs(self, elements, masses, times_rv):
-        """ compute model transit times and stellar RVs
-
-            Args:
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
-                times_rv: times at which stellar RVs are evaluated
-
-            Returns:
-                1D flattened array of transit times
-                1D array of stellar RVs (m/s)
-                fractional energy change
-
-        """
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
-        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
-        orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
-        tcobs1d = self.tcobs_flatten # 1D array of observed transit times
-        if self.transit_time_method == 'newton-raphson':
-            transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
-        else:
-            transit_times = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
-        ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
-
-        nbodyrv = rv_from_xvjac(times_rv, times, xvjac, masses)
-
-        return transit_times, nbodyrv, ediff
     
     @partial(jit, static_argnums=(0,3,4,5))
     def get_transit_times_all(self, elements, masses, t_start=None, t_end=None, dt=None):
@@ -286,38 +308,6 @@ class JaxTTV(Nbody):
             tc_list.append(tcj)
         return tc_list
 
-    def quicklook(self, model, sigma=None, save=None):
-        """ plot observed and model TTVs (may be obsolete given plot_model)
-
-            Args:
-                model: model transit times (1D flattened)
-                sigma: model uncertainty (e.g. SD of posterior models)
-                save: name of the plots when they are saved
-
-        """
-        data = self.tcobs_flatten
-        for j in range(self.nplanet):
-            idx = self.pidx==j+1
-            if not np.sum(idx):
-                continue
-            plt.figure()
-            plt.title("planet %d"%(j+1))
-            plt.xlabel("transit time")
-            plt.ylabel("TTV")
-            if np.max(self.errorobs_flatten)==1:
-                plt.plot(data[idx], (data - self.tcobs_linear)[idx], 'o', label='data', mfc='none')
-            else:
-                plt.errorbar(data[idx], (data - self.tcobs_linear)[idx], yerr=self.errorobs_flatten[idx], fmt='o', lw=1, label='data', mfc='none')
-            if sigma is None:
-                plt.plot(model[idx], (model - self.tcobs_linear)[idx], '.-', label='model', lw=1)
-            else:
-                m, s = (model - self.tcobs_linear)[idx], sigma[idx]
-                plt.plot(model[idx], m, '.-', label='model', lw=1)
-                plt.fill_between(model[idx], m-s, m+s, alpha=0.4, lw=1, color='C1')
-            plt.legend(loc='best')
-            if save is not None:
-                plt.savefig(save+"%d.png"%(j+1), dpi=200, bbox_inches="tight")
-
     def check_residuals(self, tc, jitters=None, student=True, normalize_residuals=True, plot=True, fit_mean=False):
         if jitters is not None:
             jitters = np.atleast_1d(jitters)
@@ -364,10 +354,9 @@ class JaxTTV(Nbody):
         if not student:
             return None
 
-        # Student's t fit
+        #Student's t fit
         res = self.tcobs_flatten - tc
         y = np.array(res / self.errorobs_flatten)
-        #lnvar, lndf = fit_t_distribution(y, plot=plot, fit_mean=fit_mean)
         params_st = fit_t_distribution(y, plot=plot, fit_mean=fit_mean)
 
         return {'mean': np.mean(res), 'sd': np.std(res)}, params_st
@@ -385,7 +374,7 @@ class JaxTTV(Nbody):
 
         """
         elements, masses = params_to_elements(params, self.nplanet)
-        tc, de = self.get_ttvs(elements, masses)
+        tc, de = self.get_transit_times_obs(elements, masses)
         print ("# fractional energy error (symplectic, dt=%.2e): %.2e" % (self.dt,de))
         
         dtcheck = self.p_init[0] * dtfrac
@@ -394,7 +383,7 @@ class JaxTTV(Nbody):
         self2.times = jnp.arange(self2.t_start, self2.t_end, self2.dt)
         self2.nitr_kepler = nitr_kepler
         self2.nitr_transit = nitr_transit 
-        tc2, de2 = self2.get_ttvs(elements, masses)
+        tc2, de2 = self2.get_transit_times_obs(elements, masses)
         intname = 'symplectic'
         print ("# fractional energy error (%s, dt=%.2e): %.2e" % (intname, dtcheck, de2))
 
@@ -403,93 +392,6 @@ class JaxTTV(Nbody):
         print ("# max difference in tc: %.2e days (%.2f sec)"%(maxdiff, maxdiff*86400))
 
         return tc, tc2
-
-    def optim(self, dp=5e-1, dtic=1e-1, emax=0.5, mmin=1e-7, mmax=1e-3, cosilim=[-1e-6,1e-6], olim=[-1e-6,1e-6], amoeba=False, plot=True, save=None, pinit=None, jacrev=False, return_init=False):
-        """ find maximum-likelihood parameters using scipy.optimize.curve_fit
-        Could write a more elaborate function separately.
-
-            Args:
-                dp, dtic: search widths for periods and times of inferior conjunction
-                emax: maximum allowed eccentricity
-                mmin, mmax: minimum and maximum planet masses (in units of solar mass)
-                cosilim, olim: bounds for cos(incliantion) and londitude of ascending node (radian)
-                amoeba: if True, Nelder-Mead optimization is used
-                plot: if True, show quicklook plots
-                save: name of the plots to be saved (if not None)
-                pinit: initial parameter array can be specified (if not None)
-                jacrev: if True, jacobian from jax.grad is used for curve_fit
-
-            Returns:
-                set of parameters (JaxTTV format)
-
-        """
-        from scipy.optimize import curve_fit
-        import time
-
-        npl = self.nplanet
-
-        params_lower, params_upper, pnames = [], [], []
-        for j in range(npl): # need to be changed to take into account non-transiting planets
-            params_lower += [self.p_init[j]-dp, -emax, -emax, cosilim[0], olim[0], self.tcobs[j][0]-dtic]
-            params_upper += [self.p_init[j]+dp, emax+1e-2, emax+1e-2, cosilim[1], olim[1], self.tcobs[j][0]+dtic]
-            pnames += ["p%d"%(j+1), "ec%d"%(j+1), "es%d"%(j+1), "cosi%d"%(j+1), "om%d"%(j+1), "tic%d"%(j+1)]
-        params_lower += [jnp.log(mmin)] * npl
-        params_upper += [jnp.log(mmax)] * npl
-        pnames += ["m%d"%(j+1) for j in range(npl)]
-
-        params_lower = jnp.array(params_lower).ravel()
-        params_upper = jnp.array(params_upper).ravel()
-        bounds = (params_lower, params_upper)
-        if pinit is None:
-            pinit = 0.5 * (params_lower + params_upper)
-
-        if return_init:
-            return pinit
-
-        def getmodel(params):
-            elements, masses = params_to_elements(params, npl)
-            model = self.get_ttvs(elements, masses)[0]
-            return model
-
-        if jacrev and (not amoeba):
-            from jax import jit, jacrev
-            _jacfunc = jit(jacrev(getmodel)) # it may take long to compile...
-            def jacfunc(x, *params):
-                return _jacfunc(jnp.array(params))
-            jac = jacfunc
-        else:
-            jac = None
-
-        objective = lambda params: jnp.sum(((self.tcobs_flatten - getmodel(params)) / self.errorobs_flatten)**2)
-        print ("initial objective function: %.2f (%d data)"%(objective(pinit), len(self.tcobs_flatten)))
-
-        start_time = time.time()
-        if amoeba:
-            from scipy.optimize import minimize
-            print ()
-            print ("running Nelder-Mead optimization...")
-            res = minimize(objective, pinit, bounds=np.array(bounds).T, method='Nelder-Mead', options={'adaptive': True})
-            print ("objective function: %.2f (%d data)"%(objective(res.x), len(self.tcobs_flatten)))
-            pinit = res.x
-
-        func = lambda x, *params: getmodel(np.array(params))
-        print ()
-        print ("running optimization...")
-        popt, pcov = curve_fit(func, None, self.tcobs_flatten, p0=pinit, sigma=self.errorobs_flatten, bounds=bounds, jac=jac)
-        print ("objective function: %.2f (%d data)"%(objective(popt), len(self.tcobs_flatten)))
-        print ("# elapsed time (least square): %.1f sec" % (time.time()-start_time))
-        pfinal = popt
-
-        elements, masses = params_to_elements(pfinal, npl)
-        '''
-        if plot:
-            #self.quicklook(getmodel(pfinal), save=save)
-            t0_lin, p_lin = self.linear_ephemeris()
-            tcall, _ = self.get_ttvs_nodata(elements, masses)
-            plot_model(tcall, self.tcobs, self.errorobs, t0_lin, p_lin, marker='.', save=save)
-        '''
-
-        return pfinal, elements_to_pdic(elements, masses)
 
     def sample_means_and_stds(self, samples, N=50, truncate=True, original_models=False):
         """ compute mean and standard deviation of transit time models from HMC samples
@@ -521,6 +423,79 @@ class JaxTTV(Nbody):
             stds.append(np.std(models_j, axis=0))
 
         return means, stds
+    
+    def plot_model(self, tcmodellist, tcobslist=None, errorobslist=None, t0_lin=None, p_lin=None, 
+               tcmodelunclist=None, tmargin=None, save=None, marker=None, ylims=None, ylims_residual=None,
+               unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
+        """ plot transit time model
+
+            Args:
+                tcmodellist: list of the arrays of model transit times for each planet
+                tcobslist: list of the arrays of observed transit times for each planet
+                errorobslist: list of the arrays of observed transit time errors for each planet
+                t0_lin, p_lin: linear ephemeris used to show TTVs (n_planet,)
+                tcmodelunclist: model uncertainty (same format as tcmodellist)
+                tmargin: margin in x axis
+                save: if not None, plot is saved as "save_planet#.png"
+                marker: marker for model
+                unit: TTV unit (defaults to minutes)
+                ylabel, xlabel: axis labels in the plots
+                ylims, ylims_residual: y ranges in the plots
+
+        """
+        if tcobslist is None:
+            tcobslist = self.tcobs
+        
+        if errorobslist is None:
+            errorobslist = self.errorobs
+
+        if (t0_lin is None) or (p_lin is None):
+            t0_lin, p_lin = self.linear_ephemeris()
+            warnings.warn("using t0 and P from a linear fit to the observed transit times.")
+
+        for j, (tcmodel, tcobs, errorobs, t0, p) in enumerate(zip(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin)):
+            tcmodel, tcobs, errorobs = np.array(tcmodel), np.array(tcobs), np.array(errorobs)
+
+            fig, (ax, ax2) = plt.subplots(2, 1, figsize=(10,6), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
+            if tmargin is not None:
+                plt.xlim(np.min(tcobs)-tmargin, np.max(tcobs)+tmargin)
+            ax.set_ylabel(ylabel)
+            ax2.set_xlabel(xlabel)
+            tnumobs = np.round((tcobs - t0)/p).astype(int)
+            tnummodel = np.round((tcmodel - t0)/p).astype(int)
+            ax.errorbar(tcobs, (tcobs-t0-tnumobs*p)*unit, yerr=errorobs*unit, zorder=1000,
+                        fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
+            idxm = tcmodel > 0
+            tlin = t0 + tnummodel * p
+            ax.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=1, mfc='white', color='steelblue',
+                    zorder=-1000, label='model', alpha=0.9)
+            if tcmodelunclist is not None:
+                munc = tcmodelunclist[j]
+                ax.fill_between(tcmodel[idxm], (tcmodel-munc-tlin)[idxm]*unit,
+                                (tcmodel+munc-tlin)[idxm]*unit,
+                                lw=1, color='steelblue', zorder=-1000, alpha=0.2)
+            ax.set_title("planet %d"%(j+1))
+            if ylims is not None and len(ylims)==len(t0_lin):
+                ax2.set_ylim(ylims[j])
+
+            idxm = findidx_map(tcmodel, tcobs) 
+            ax2.errorbar(tcobs, (tcobs-tcmodel[idxm])*unit, yerr=errorobs*unit, zorder=1000,
+                        fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
+            ax2.axhline(y=0, color='steelblue', alpha=0.6)
+            ax2.set_ylabel("residual (min)")
+            if ylims_residual is not None and len(ylims_residual)==len(t0_lin):
+                ax2.set_ylim(ylims_residual[j])
+
+            # change legend order
+            handles, labels = ax.get_legend_handles_labels()
+            order = [1,0]
+            ax.legend([handles[idx] for idx in order],[labels[idx] for idx in order],
+                    loc='upper left', bbox_to_anchor=(1,1))
+
+            fig.tight_layout(pad=0.05)
+
+            if save is not None:
+                plt.savefig(save+"_planet%d.png"%(j+1), dpi=200, bbox_inches="tight")
 
 
 @partial(jit, static_argnums=(5,))
@@ -574,227 +549,3 @@ def integrate_orbits_hermite(xjac0, vjac0, masses, times):
     de_frac = get_energy_diff(xvacm, masses)
     return t, xcm, vcm, acm, de_frac
 
-def plot_model(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin,
-               tcmodelunclist=None, tmargin=None, save=None, marker=None, ylims=None, ylims_residual=None,
-               unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
-    """ plot transit time model
-
-        Args:
-            tcmodellist: list of the arrays of model transit times for each planet
-            tcobslist: list of the arrays of observed transit times for each planet
-            errorobslist: list of the arrays of observed transit time errors for each planet
-            t0_lin, p_lin: linear ephemeris used to show TTVs (n_planet,)
-            tcmodelunclist: model uncertainty (same format as tcmodellist)
-            tmargin: margin in x axis
-            save: if not None, plot is saved as "save_planet#.png"
-            marker: marker for model
-            unit: TTV unit (defaults to minutes)
-            ylabel, xlabel: axis labels in the plots
-            ylims, ylims_residual: y ranges in the plots
-
-    """
-    for j, (tcmodel, tcobs, errorobs, t0, p) in enumerate(zip(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin)):
-        tcmodel, tcobs, errorobs = np.array(tcmodel), np.array(tcobs), np.array(errorobs)
-
-        #plt.figure(figsize=(8,5))
-        fig, (ax, ax2) = plt.subplots(2, 1, figsize=(10,6), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
-        if tmargin is not None:
-            plt.xlim(np.min(tcobs)-tmargin, np.max(tcobs)+tmargin)
-        ax.set_ylabel(ylabel)
-        ax2.set_xlabel(xlabel)
-        tnumobs = np.round((tcobs - t0)/p).astype(int)
-        tnummodel = np.round((tcmodel - t0)/p).astype(int)
-        ax.errorbar(tcobs, (tcobs-t0-tnumobs*p)*unit, yerr=errorobs*unit, zorder=1000,
-                     fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
-        #idxm = tcmodel < np.max(tcobs) + tmargin
-        idxm = tcmodel > 0
-        tlin = t0 + tnummodel * p
-        ax.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=1, mfc='white', color='steelblue',
-                 zorder=-1000, label='model', alpha=0.9)
-        if tcmodelunclist is not None:
-            munc = tcmodelunclist[j]
-            ax.fill_between(tcmodel[idxm], (tcmodel-munc-tlin)[idxm]*unit,
-                            (tcmodel+munc-tlin)[idxm]*unit,
-                             lw=1, color='steelblue', zorder=-1000, alpha=0.2)
-        ax.set_title("planet %d"%(j+1))
-        if ylims is not None and len(ylims)==len(t0_lin):
-            ax2.set_ylim(ylims[j])
-
-        idxm = findidx_map(tcmodel, tcobs) 
-        ax2.errorbar(tcobs, (tcobs-tcmodel[idxm])*unit, yerr=errorobs*unit, zorder=1000,
-                     fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
-        ax2.axhline(y=0, color='steelblue', alpha=0.6)
-        ax2.set_ylabel("residual (min)")
-        if ylims_residual is not None and len(ylims_residual)==len(t0_lin):
-            ax2.set_ylim(ylims_residual[j])
-
-        # change legend order
-        handles, labels = ax.get_legend_handles_labels()
-        order = [1,0]
-        ax.legend([handles[idx] for idx in order],[labels[idx] for idx in order],
-                   loc='upper left', bbox_to_anchor=(1,1))
-
-        fig.tight_layout(pad=0.05)
-
-        if save is not None:
-            plt.savefig(save+"_planet%d.png"%(j+1), dpi=200, bbox_inches="tight")
-'''
-def plot_model(self, tcmodellist, tcobslist=None, errorobslist=None, t0_lin=None, p_lin=None, 
-               tcmodelunclist=None, tmargin=None, save=None, marker=None, ylims=None, ylims_residual=None,
-               unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
-    """ plot transit time model
-
-        Args:
-            tcmodellist: list of the arrays of model transit times for each planet
-            tcobslist: list of the arrays of observed transit times for each planet
-            errorobslist: list of the arrays of observed transit time errors for each planet
-            t0_lin, p_lin: linear ephemeris used to show TTVs (n_planet,)
-            tcmodelunclist: model uncertainty (same format as tcmodellist)
-            tmargin: margin in x axis
-            save: if not None, plot is saved as "save_planet#.png"
-            marker: marker for model
-            unit: TTV unit (defaults to minutes)
-            ylabel, xlabel: axis labels in the plots
-            ylims, ylims_residual: y ranges in the plots
-
-    """
-    if tcobslist is None:
-        tcobslist = self.tcobs
-    
-    if errorobslist is None:
-        errorobslist = self.errorobs
-
-    if (t0_lin is None) or (p_lin is None):
-        t0_lin, p_lin = self.linear_ephemeris()
-        warnings.warn("using t0 and P from a linear fit to the observed transit times.")
-
-    for j, (tcmodel, tcobs, errorobs, t0, p) in enumerate(zip(tcmodellist, tcobslist, errorobslist, t0_lin, p_lin)):
-        tcmodel, tcobs, errorobs = np.array(tcmodel), np.array(tcobs), np.array(errorobs)
-
-        fig, (ax, ax2) = plt.subplots(2, 1, figsize=(10,6), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
-        if tmargin is not None:
-            plt.xlim(np.min(tcobs)-tmargin, np.max(tcobs)+tmargin)
-        ax.set_ylabel(ylabel)
-        ax2.set_xlabel(xlabel)
-        tnumobs = np.round((tcobs - t0)/p).astype(int)
-        tnummodel = np.round((tcmodel - t0)/p).astype(int)
-        ax.errorbar(tcobs, (tcobs-t0-tnumobs*p)*unit, yerr=errorobs*unit, zorder=1000,
-                     fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
-        idxm = tcmodel > 0
-        tlin = t0 + tnummodel * p
-        ax.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=1, mfc='white', color='steelblue',
-                 zorder=-1000, label='model', alpha=0.9)
-        if tcmodelunclist is not None:
-            munc = tcmodelunclist[j]
-            ax.fill_between(tcmodel[idxm], (tcmodel-munc-tlin)[idxm]*unit,
-                            (tcmodel+munc-tlin)[idxm]*unit,
-                             lw=1, color='steelblue', zorder=-1000, alpha=0.2)
-        ax.set_title("planet %d"%(j+1))
-        if ylims is not None and len(ylims)==len(t0_lin):
-            ax2.set_ylim(ylims[j])
-
-        idxm = findidx_map(tcmodel, tcobs) 
-        ax2.errorbar(tcobs, (tcobs-tcmodel[idxm])*unit, yerr=errorobs*unit, zorder=1000,
-                     fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
-        ax2.axhline(y=0, color='steelblue', alpha=0.6)
-        ax2.set_ylabel("residual (min)")
-        if ylims_residual is not None and len(ylims_residual)==len(t0_lin):
-            ax2.set_ylim(ylims_residual[j])
-
-        # change legend order
-        handles, labels = ax.get_legend_handles_labels()
-        order = [1,0]
-        ax.legend([handles[idx] for idx in order],[labels[idx] for idx in order],
-                   loc='upper left', bbox_to_anchor=(1,1))
-
-        fig.tight_layout(pad=0.05)
-
-        if save is not None:
-            plt.savefig(save+"_planet%d.png"%(j+1), dpi=200, bbox_inches="tight")
-'''
-            
-def get_means_and_stds(models):
-    """ get mean and standard deviation of the models
-
-        Args:
-            models: transit time models, (# of samples, # of planets, # of transits)
-
-        Returns:
-            means: mean of the models (# of planets, # of transits)
-
-    """
-    means, stds = [], []
-    for j in range(len(models[0])):
-        models_j = np.array([models[s][j] for s in range(len(models))])
-        means.append(np.mean(models_j, axis=0))
-        stds.append(np.std(models_j, axis=0))
-    return means, stds
-
-def fit_t_distribution(y, plot=True, fit_mean=False):
-    from scipy.stats import t as tdist
-    from scipy.stats import norm
-    import numpyro
-    import numpyro.distributions as dist
-    import jax.random as random
-
-    def model(y):
-        logdf = numpyro.sample("lndf", dist.Uniform(jnp.log(0.1), jnp.log(100)))
-        logvar = numpyro.sample("lnvar", dist.Uniform(-2, 10))
-        df = numpyro.deterministic("df", jnp.exp(logdf))
-        v1 = numpyro.deterministic("v1", jnp.exp(logvar))
-        if fit_mean:
-            mean = numpyro.sample("mean", dist.Uniform(-jnp.std(y), jnp.std(y)))
-            numpyro.sample("obs", dist.StudentT(loc=mean, scale=jnp.sqrt(v1), df=df), obs=y)
-        else:
-            numpyro.sample("obs", dist.StudentT(scale=jnp.sqrt(v1), df=df), obs=y)
-
-    kernel = numpyro.infer.NUTS(model)
-    mcmc = numpyro.infer.MCMC(kernel, num_warmup=500, num_samples=500)
-    rng_key = random.PRNGKey(0)
-    mcmc.run(rng_key, y)
-    mcmc.print_summary()
-
-    samples = mcmc.get_samples()
-    lndf, lnvar = np.mean(samples['lndf']), np.mean(samples['lnvar'])
-    pout = {'lndf': lndf, 'lnvar': lnvar}
-    if fit_mean:
-        mean = np.mean(samples['mean'])
-        pout['mean'] = mean
-    else:
-        mean = 0.
-
-    if plot:
-        sd = np.std(y)
-        fig, ax = plt.subplots(1, 2, figsize=(16,4))
-        ax[1].set_yscale("log")
-        ax[1].set_ylabel("PDF")
-        ax[0].set_ylabel("CDF")
-        ax[0].set_xlabel("residual / assigned error")
-        ax[1].set_xlabel("residual / assigned error")
-        ax[1].hist(y, histtype='step', lw=3, alpha=0.6, density=True, color='gray')
-        ymin, ymax = plt.gca().get_ylim()
-        ax[1].set_ylim(ymin/5., ymax*1.5)
-        x0 = np.linspace(-5, 5, 100)
-        ax[1].plot(x0, norm(scale=sd).pdf(x0), lw=1, color='C0', ls='dashed', 
-                label='normal, $\mathrm{SD}=%.2f$'%sd)
-        ax[1].plot(x0, norm.pdf(x0), lw=1, color='C0', ls='dotted', 
-                label='normal, $\mathrm{SD}=1$')
-        ax[1].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).pdf(x0), 
-        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)'%(lndf, lnvar, mean))
-        #ax[1].legend(loc='upper right', bbox_to_anchor=(1.5,1))
-
-        #ax[0].hist(y, bins=len(y), histtype='step', lw=3, alpha=0.6, density=True, cumulative=True, color='red')
-        ysum = np.ones_like(y)
-        hist, edge = np.histogram(y, bins=len(y))
-        ax[0].plot(np.r_[x0[0], edge[0], edge[:-1], edge[-1], x0[-1]], 
-                np.r_[0, 0, np.cumsum(hist)/len(y), 1, 1], lw=3, alpha=0.6, color='gray')
-        #ax[0].plot(np.sort(y), np.cumsum(ysum)/len(ysum), lw=3, alpha=0.6, color='gray')
-        ax[0].plot(x0, norm(loc=0, scale=sd).cdf(x0), lw=1, color='C0', ls='dashed', 
-                label='normal, $\mathrm{SD}=%.2f$'%sd)
-        ax[0].plot(x0, norm.cdf(x0), lw=1, color='C0', ls='dotted', 
-                label='normal, $\mathrm{SD}=1$')
-        ax[0].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).cdf(x0), 
-        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)'%(lndf, lnvar, mean))
-        ax[0].legend(loc='upper left', fontsize=14)
-
-    return pout

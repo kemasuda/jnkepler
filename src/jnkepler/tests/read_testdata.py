@@ -28,8 +28,7 @@ def read_testdata_tc():
     dt = 1.0
     t_start, t_end = 155., 2950.
 
-    jttv = JaxTTV(t_start, t_end, dt)
-    jttv.set_tcobs(tcobs, p_init, print_info=False)
+    jttv = JaxTTV(t_start, t_end, dt, tcobs, p_init, errorobs=errorobs, print_info=False)
 
     pdic = elements_to_pdic(*params_to_elements(params_test, 3))
     

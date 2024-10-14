@@ -179,7 +179,7 @@ def params_to_elements(params, npl):
 
     """
     elements = jnp.array(params[:-npl].reshape(npl, -1))
-    masses = jnp.exp(jnp.hstack([[0], params[-npl:]]))
+    masses = jnp.exp(jnp.hstack([0, params[-npl:]]))
     return elements, masses
 
 
