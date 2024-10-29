@@ -165,8 +165,7 @@ class JaxTTV(Nbody):
         To get all the transit times, use get_transit_times_all instead.
 
             Args:
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
+                par_dict: dict containing parameters
 
             Returns:
                 1D flattened array of transit times
@@ -308,7 +307,9 @@ class JaxTTV(Nbody):
             tc_list.append(tcj)
         return tc_list
 
-    def check_residuals(self, tc, jitters=None, student=True, normalize_residuals=True, plot=True, fit_mean=False):
+    def check_residuals(self, par_dict, jitters=None, student=True, normalize_residuals=True, plot=True, fit_mean=False):
+        tc = self.get_transit_times_obs(par_dict)[0]
+
         if jitters is not None:
             jitters = np.atleast_1d(jitters)
             if len(jitters) == 1:
@@ -361,7 +362,7 @@ class JaxTTV(Nbody):
 
         return {'mean': np.mean(res), 'sd': np.std(res)}, params_st
 
-    def check_timing_precision(self, params, dtfrac=1e-3, nitr_transit=10, nitr_kepler=10):
+    def check_timing_precision(self, par_dict, dtfrac=1e-3, nitr_transit=10, nitr_kepler=10):
         """compare get_ttvs output with that computed with a smaller timestep to check the precision
 
             Args:
@@ -373,8 +374,7 @@ class JaxTTV(Nbody):
                 tc2: model transit times using a smaller timestep
 
         """
-        elements, masses = params_to_elements(params, self.nplanet)
-        tc, de = self.get_transit_times_obs(elements, masses)
+        tc, de = self.get_transit_times_obs(par_dict)
         print ("# fractional energy error (symplectic, dt=%.2e): %.2e" % (self.dt,de))
         
         dtcheck = self.p_init[0] * dtfrac
@@ -383,7 +383,7 @@ class JaxTTV(Nbody):
         self2.times = jnp.arange(self2.t_start, self2.t_end, self2.dt)
         self2.nitr_kepler = nitr_kepler
         self2.nitr_transit = nitr_transit 
-        tc2, de2 = self2.get_transit_times_obs(elements, masses)
+        tc2, de2 = self2.get_transit_times_obs(par_dict)
         intname = 'symplectic'
         print ("# fractional energy error (%s, dt=%.2e): %.2e" % (intname, dtcheck, de2))
 
@@ -407,11 +407,11 @@ class JaxTTV(Nbody):
 
         """
         np.random.seed(123)
-        sample_indices = np.random.randint(0, len(samples['masses']), N)
+        sample_indices = np.random.randint(0, len(samples['period']), N)
         models, means, stds = [], [], []
         for idx in sample_indices:
-            elements, masses = samples['elements'][idx], samples['masses'][idx]
-            tc_list = self.get_transit_times_all_list(elements, masses, truncate=truncate)
+            pdic_ = {key: val[idx] for key,val in samples.items()}
+            tc_list = self.get_transit_times_all_list(pdic_, truncate=truncate)
             models.append(tc_list)
 
         if original_models:

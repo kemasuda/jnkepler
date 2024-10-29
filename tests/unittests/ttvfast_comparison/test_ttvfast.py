@@ -5,7 +5,7 @@ import glob
 import pandas as pd
 import numpy as np
 from jnkepler.jaxttv import JaxTTV
-from jnkepler.jaxttv.utils import params_to_elements
+from jnkepler.jaxttv.utils import params_to_elements, em_to_dict
 import itertools
 import importlib_resources
 path = importlib_resources.files('jnkepler').joinpath('data')
@@ -52,7 +52,9 @@ def compare_transit_times(pdic_ttvfast, params_jttv, dt_factor=1.):
     planets, smass, t_start, dt, t_end, npl = params_for_ttvfast(pdic_ttvfast)
     ttvfast_results = ttvfast.ttvfast(planets, smass, t_start, dt, t_end)
     jttv, tc_ttvfast = init_jaxttv(ttvfast_results, t_start, t_end, dt*dt_factor, npl)
-    tc_jttv, de = jttv.get_transit_times_obs(*params_to_elements(params_jttv, jttv.nplanet))
+    elements, masses = params_to_elements(params_jttv, jttv.nplanet)
+    pdic = em_to_dict(elements, masses)
+    tc_jttv, de = jttv.get_transit_times_obs(pdic)
     return tc_jttv, tc_ttvfast
 
 def test_comparison():

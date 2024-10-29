@@ -3,26 +3,7 @@ __all__ = ["information", "scale_information", "observed_information", "hessian"
 
 import jax.numpy as jnp
 from jax import jacfwd, jacrev
-
-
-def model_pdic(jttv, pdic, ms=1., lnmass=False):
-    """transit times from parameter dict
-    
-        Args:
-            jttv: JaxTTV object
-            pdic: dict containing parameters
-            ms: stellar mass (solar unit)
-
-        Returns:
-            1D flattened model transit times
-    
-    """
-    ecosw, esinw, period, tic, lnode, cosi \
-        = pdic['ecosw'], pdic['esinw'], pdic['period'], pdic['tic'], pdic['lnode'], pdic['cosi'] 
-    mass = jnp.exp(pdic['lnmass']) if lnmass else pdic['mass']
-    elements = jnp.stack([period, ecosw, esinw, cosi, lnode, tic]).T 
-    masses = jnp.hstack([ms, mass])
-    return jttv.get_transit_times_obs(elements, masses)[0]
+from .utils import params_to_dict
 
 
 def information(jttv, pdic, keys):
@@ -37,11 +18,14 @@ def information(jttv, pdic, keys):
             information matrix computed as grad.T Sigma_inv grad
 
     """
-    assert {'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi'}.issubset(pdic.keys()), "pdic keys must contain all of ecosw, esinw, period, tic, lnode, cosi."
-    assert 'mass' in pdic.keys() or 'lnmass' in pdic.keys(), "pdic keys must contain either mass or lnmass."
-    flag_lnmass = True if "lnmass" in keys else False
-    assert set(keys).issubset({'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi', 'lnmass' if flag_lnmass else 'mass'}), "pdic keys must a subsect of {ecosw, esinw, period, tic, lnode, cosi}+{mass or lnmass}"
-    jacobian_pytree = jacrev(model_pdic, argnums=1)(jttv, pdic, lnmass=flag_lnmass)
+    assert set(keys).issubset(pdic.keys()), "all keys must be included in pdic.keys()."
+    #if ('pmass' in keys) and ('pmass' not in pdic.keys()):
+    #    pdic['pmass'] = jnp.exp(pdic['lnpmass'])
+    #assert {'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi'}.issubset(pdic.keys()), "pdic keys must contain all of ecosw, esinw, period, tic, lnode, cosi."
+    #assert 'pmass' in pdic.keys() or 'lnpmass' in pdic.keys(), "pdic keys must contain either mass or lnmass."
+    #assert set(keys).issubset({'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi', 'lnpmass', 'pmass'}), "pdic keys must be a subset of {ecosw, esinw, period, tic, lnode, cosi}+{mass or lnmass}"
+    func = lambda p: jttv.get_transit_times_obs(p)[0]
+    jacobian_pytree = jacrev(func)(pdic)
     jacobian = jnp.hstack([jacobian_pytree[key] for key in keys])
     sigma_inv = jnp.diag(1. / jttv.errorobs_flatten**2)
     information_matrix = jacobian.T@sigma_inv@jacobian
@@ -108,7 +92,7 @@ def scale_information(matrix, param_bounds, keys):
     
     """
     scaled_matrix = jnp.zeros_like(matrix)
-    npl = len(param_bounds["mass"][0])
+    npl = len(param_bounds["period"][0])
     for i,key1 in enumerate(keys):
         for j,key2 in enumerate(keys):
             scale_factor = jnp.einsum("i,j->ij", param_bounds[key1][1] - param_bounds[key1][0], param_bounds[key2][1] - param_bounds[key2][0])
@@ -128,7 +112,7 @@ def negative_log_likelihood(jttv, pdic, lnmass=False):
             negative log likelihood
     
     """
-    transit_times = model_pdic(jttv, pdic, lnmass=lnmass)
+    transit_times = jttv.get_transit_times_obs(pdic)[0]
     return 0.5 * jnp.sum( ((jttv.tcobs_flatten - transit_times) / jttv.errorobs_flatten)**2 )
 
 
@@ -145,9 +129,8 @@ def observed_information(jttv, pdic, keys):
 
     """
     assert {'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi'}.issubset(pdic.keys()), "pdic keys must contain all of ecosw, esinw, period, tic, lnode, cosi."
-    assert 'mass' in pdic.keys() or 'lnmass' in pdic.keys(), "pdic keys must contain either mass or lnmass."
-    flag_lnmass = True if "lnmass" in keys else False
-    assert set(keys).issubset({'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi', 'lnmass' if flag_lnmass else 'mass'}), "pdic keys must a subsect of {ecosw, esinw, period, tic, lnode, cosi}+{mass or lnmass}"
+    assert 'pmass' in pdic.keys() or 'lnpmass' in pdic.keys(), "pdic keys must contain either mass or lnmass."
+    assert set(keys).issubset({'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi', 'lnpmass', 'pmass'}), "pdic keys must a subsect of {ecosw, esinw, period, tic, lnode, cosi}+{mass or lnmass}"
 
     # jacfwd fails for newton-raphson method
     from copy import deepcopy
@@ -157,7 +140,7 @@ def observed_information(jttv, pdic, keys):
     else:
         jttv_copy = jttv
 
-    hessian_pytree = jacfwd(jacrev(negative_log_likelihood, argnums=1), argnums=1)(jttv_copy, pdic, lnmass=flag_lnmass)
+    hessian_pytree = jacfwd(jacrev(negative_log_likelihood, argnums=1), argnums=1)(jttv_copy, pdic)
     
     return get_2d_matrix(hessian_pytree, keys)
 
@@ -177,18 +160,12 @@ def hessian(self, pdic):
     from jnkepler.jaxttv.findtransit import find_transit_times_kepler_all
     from jnkepler.jaxttv.symplectic import integrate_xv
 
-    keys = ['ecosw', 'esinw', 'mass', 'period', 'tic']
+    keys = ['ecosw', 'esinw', 'pmass', 'period', 'tic']
     
     def negloglike(parr):
         # jacfwd fails for newton-raphson method, so use interpolate method
-        npl = self.nplanet
-        ecosw, esinw, mass, period, tic = parr[:npl], parr[npl:2*npl], parr[2*npl:3*npl], parr[3*npl:4*npl], parr[4*npl:5*npl]
-        lnode, cosi = 0.*period, 0.*period
-        elements = jnp.stack([period, ecosw, esinw, cosi, lnode, tic]).T 
-        masses = jnp.hstack([1., mass])
-
-        masses = jnp.hstack([1., mass])
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start)
+        pdic = params_to_dict(parr, self.nplanet, keys)
+        xjac0, vjac0, masses = initialize_jacobi_xv(pdic, self.t_start)
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler)
         orbit_idx = self.pidx.astype(int) - 1
         tcobs1d = self.tcobs_flatten
