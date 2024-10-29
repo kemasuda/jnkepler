@@ -158,8 +158,9 @@ class NbodyTransit(JaxTTV):
 
         """
         import jaxopt
-        zeros = np.zeros(len(masses)-1)
-        ones = np.ones(len(masses)-1)
+        npl = self.nplanet
+        zeros = np.zeros(npl)
+        ones = np.ones(npl)
         p_init = {
             "rstar": np.float64(rstar_init),
             "prad": ones * 0.01,
