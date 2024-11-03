@@ -6,7 +6,7 @@ from jax import jacfwd, jacrev
 from .utils import params_to_dict
 
 
-def information(jttv, pdic, keys):
+def information(jttv, pdic, keys, param_bounds=None):
     """compute Fisher information matrix for iid gaussian likelihood
 
         Args:
@@ -19,14 +19,15 @@ def information(jttv, pdic, keys):
 
     """
     assert set(keys).issubset(pdic.keys()), "all keys must be included in pdic.keys()."
-    #if ('pmass' in keys) and ('pmass' not in pdic.keys()):
-    #    pdic['pmass'] = jnp.exp(pdic['lnpmass'])
-    #assert {'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi'}.issubset(pdic.keys()), "pdic keys must contain all of ecosw, esinw, period, tic, lnode, cosi."
-    #assert 'pmass' in pdic.keys() or 'lnpmass' in pdic.keys(), "pdic keys must contain either mass or lnmass."
-    #assert set(keys).issubset({'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi', 'lnpmass', 'pmass'}), "pdic keys must be a subset of {ecosw, esinw, period, tic, lnode, cosi}+{mass or lnmass}"
+    if param_bounds is not None:
+        assert set(keys).issubset(param_bounds.keys()), "all keys must be included in param_bounds.keys()."
+        print ("computing scaled information matrix.")
     func = lambda p: jttv.get_transit_times_obs(p)[0]
     jacobian_pytree = jacrev(func)(pdic)
-    jacobian = jnp.hstack([jacobian_pytree[key] for key in keys])
+    if param_bounds is None:
+        jacobian = jnp.hstack([jacobian_pytree[key] for key in keys])
+    else:
+        jacobian = jnp.hstack([jacobian_pytree[key]*(param_bounds[key][1] - param_bounds[key][0]) for key in keys])
     sigma_inv = jnp.diag(1. / jttv.errorobs_flatten**2)
     information_matrix = jacobian.T@sigma_inv@jacobian
     return information_matrix
@@ -80,6 +81,8 @@ def information_numpyrox(numpyro_model, pdic, **kwargs):
 
 def scale_information(matrix, param_bounds, keys):
     """get information matrix for scaled parameters
+
+    This will be deprecated; information with param_bounds does the same.
     
         Args:
             matrix: information matrix
@@ -99,7 +102,7 @@ def scale_information(matrix, param_bounds, keys):
             new_elements = matrix[npl*i:npl*(i+1),npl*j:npl*(j+1)] * scale_factor
             scaled_matrix = scaled_matrix.at[npl*i:npl*(i+1),npl*j:npl*(j+1)].set(new_elements)
     return scaled_matrix
-    
+
 
 def negative_log_likelihood(jttv, pdic, lnmass=False):
     """negative log likelihood (iid gaussian)
