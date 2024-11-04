@@ -14,3 +14,6 @@ include src/jnkepler/data/info.txt
 include src/jnkepler/data/hessian.txt
 include src/jnkepler/data/JaxTTVobject.pkl
 include src/jnkepler/data/kep51_nbodytransit_optim.npy
+include src/jnkepler/data/kep51_4planet.csv
+include src/jnkepler/data/kep51_4planet_sol.csv
+include src/jnkepler/data/kep51_4planet_sol-2.csv

@@ -1,5 +1,5 @@
 
-__all__ = ["read_testdata_tc"]
+__all__ = ["read_testdata_tc", "read_testdata_4planet"]
 
 import pkg_resources
 import glob
@@ -36,3 +36,30 @@ def read_testdata_tc():
     pdic['pmass'] = pdic['mass']
     
     return jttv, params_test, tc_test, pdic
+
+
+def read_testdata_4planet():
+    """read test transit times
+    
+        Returns:
+            initialized JaxTTV class, parameter array, transit time array, parameter dict
+            note that this dict 
+
+    
+    """
+    datapath = pkg_resources.resource_filename('jnkepler', 'data/kep51_4planet.csv')
+    parampath = pkg_resources.resource_filename('jnkepler', 'data/kep51_4planet_sol.csv')
+    parampath2 = pkg_resources.resource_filename('jnkepler', 'data/kep51_4planet_sol-2.csv')
+
+    d = pd.read_csv(datapath, comment='#')
+    tcobs = [np.array(d.tc[d.planet==j]) for j in range(3)]
+    errorobs = [np.array(d.tcerr[d.planet==j]) for j in range(3)]
+    p_init = [45.155296,  85.316963, 130.175183] 
+    dt = 1.0
+    t_start, t_end = 155., 5600.
+    jttv = JaxTTV(t_start, t_end, dt, tcobs, p_init, errorobs=errorobs, print_info=True)
+
+    params = pd.read_csv(parampath)
+    params2 = pd.read_csv(parampath2)
+    
+    return jttv, params, params2
