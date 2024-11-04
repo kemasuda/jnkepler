@@ -19,9 +19,9 @@ config.update('jax_enable_x64', True)
 
 
 class Nbody:
-    """ superclass for nbody analysis """
+    """superclass for nbody analysis"""
     def __init__(self, t_start, t_end, dt, nitr_kepler=3):
-        """ initialization
+        """initialization
 
             Args:
                 t_start: start time of integration
@@ -38,9 +38,9 @@ class Nbody:
 
 
 class JaxTTV(Nbody):
-    """ main class for TTV analysis """
+    """main class for TTV analysis"""
     def __init__(self, t_start, t_end, dt, tcobs, p_init, errorobs=None, print_info=True, nitr_kepler=3, transit_time_method='newton-raphson', nitr_transit=5):
-        """ initialization
+        """initialization
 
             Args:
                 t_start: start time of integration
@@ -82,10 +82,10 @@ class JaxTTV(Nbody):
         self.tcobs_linear = tcobs_linear
 
     def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
-        """ set observed transit times
+        """set observed transit times
 
         JaxTTV returns transit times that are closest to the observed times,
-        rather than all the transit times between t_start and t_end
+        rather than all the transit times between t_start and t_end.
 
             Args:
                 tcobs: list of the arrays of transit times for each planet
@@ -137,7 +137,7 @@ class JaxTTV(Nbody):
         return tcobs, tcobs_flatten, nplanet, p_init, errorobs, errorobs_flatten, pidx, tcobs_linear
 
     def linear_ephemeris(self):
-        """ (Re)derive linear ephemeris when necessary
+        """(Re)derive linear ephemeris when necessary
 
             Returns:
                 array of t0, array of P from linear fitting
@@ -159,13 +159,17 @@ class JaxTTV(Nbody):
         return np.array(t0_new), np.array(p_new)
 
     @partial(jit, static_argnums=(0,))
-    def get_transit_times_obs(self, par_dict):
-        """ compute model transit times (jitted version)
+    def get_transit_times_obs(self, par_dict, transit_orbit_idx=None):
+        """compute model transit times 
+
         This function returns only transit times that are closest to the observed ones.
         To get all the transit times, use get_transit_times_all instead.
 
             Args:
                 par_dict: dict containing parameters
+                transit_orbit_idx: array of idx of the planet (orbit) for each transit times should be evaulated, starting from 0.
+                    This must be specified when non-transiting planets exist.
+                    If None, all the planets are assuming to be transiting. This is the same as setting transit_orbit_idx = jnp.arange(nplanet).
 
             Returns:
                 1D flattened array of transit times
@@ -174,7 +178,11 @@ class JaxTTV(Nbody):
         """       
         xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, self.t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
-        orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
+        # idx for orbit, starting from 0
+        if transit_orbit_idx is None:
+            orbit_idx = self.pidx.astype(int) - 1
+        else:
+            orbit_idx = transit_orbit_idx[self.pidx.astype(int) - 1].astype(int)
         tcobs1d = self.tcobs_flatten # 1D array of observed transit times
         if self.transit_time_method == 'newton-raphson':
             transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
@@ -183,15 +191,17 @@ class JaxTTV(Nbody):
         ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
         return transit_times, ediff
 
-
     @partial(jit, static_argnums=(0,))
-    def get_transit_times_and_rvs_obs(self, par_dict, times_rv):
-        """ compute model transit times and stellar RVs
+    def get_transit_times_and_rvs_obs(self, par_dict, times_rv, transit_orbit_idx=None):
+        """compute model transit times and stellar RVs
 
             Args:
                 elements: orbital elements in JaxTTV format
                 masses: masses of the bodies (in units of solar mass)
                 times_rv: times at which stellar RVs are evaluated
+                transit_orbit_idx: array of idx of the planet (orbit) for each transit times should be evaulated, starting from 0.
+                    This must be specified when non-transiting planets exist.
+                    If None, all the planets are assuming to be transiting. This is the same as setting transit_orbit_idx = jnp.arange(nplanet).
 
             Returns:
                 1D flattened array of transit times
@@ -201,7 +211,11 @@ class JaxTTV(Nbody):
         """
         xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, self.t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
-        orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
+        # idx for orbit, starting from 0
+        if transit_orbit_idx is None:
+            orbit_idx = self.pidx.astype(int) - 1
+        else:
+            orbit_idx = transit_orbit_idx[self.pidx.astype(int) - 1].astype(int)
         tcobs1d = self.tcobs_flatten # 1D array of observed transit times
         if self.transit_time_method == 'newton-raphson':
             transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
@@ -252,7 +266,7 @@ class JaxTTV(Nbody):
         return pidxall, tcall_linear, tcall_linear_flatten
     
     @partial(jit, static_argnums=(0,2,3,4))
-    def get_transit_times_all(self, par_dict, t_start=None, t_end=None, dt=None):
+    def get_transit_times_all(self, par_dict, t_start=None, t_end=None, dt=None, transit_orbit_idx=None):
         """compute all model transit times between t_start and t_end
 
         This function is slower than get_ttvs and should not be used for fitting.
@@ -275,17 +289,21 @@ class JaxTTV(Nbody):
         # compute 1D flattend transit times
         xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, times, nitr=self.nitr_kepler) # integration
-        orbit_idx, _, tcobs1d = self.tcall_linear(t_start, t_end)
-        orbit_idx = orbit_idx.astype(int) - 1 # start from 0
+        _orbit_idx, _, tcobs1d = self.tcall_linear(t_start, t_end)
+        # idx for orbit, starting from 0
+        if transit_orbit_idx is None:
+            orbit_idx = _orbit_idx.astype(int) - 1 
+        else:
+            orbit_idx = transit_orbit_idx[_orbit_idx.astype(int) - 1].astype(int)
         if self.transit_time_method == 'newton-raphson':
             transit_times = find_transit_times_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
         else:
             transit_times = find_transit_times_kepler_all(orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
         ediff = get_energy_diff_jac(xvjac, masses, -0.5*dt)
 
-        return transit_times, ediff, orbit_idx
+        return transit_times, ediff, _orbit_idx.astype(int) - 1 
     
-    def get_transit_times_all_list(self, par_dict, truncate=True):
+    def get_transit_times_all_list(self, par_dict, truncate=True, transit_orbit_idx=None):
         """compute all transit times and retunrs a list
         
             Args:
@@ -298,7 +316,7 @@ class JaxTTV(Nbody):
                 each element is an array of model transit times (length varies for each planet)
         
         """
-        tc_flatten, _, orbit_idx = self.get_transit_times_all(par_dict)
+        tc_flatten, _, orbit_idx = self.get_transit_times_all(par_dict, transit_orbit_idx=transit_orbit_idx)
         tc_list = []
         for j in range(self.nplanet):
             tcj = tc_flatten[orbit_idx==j]
@@ -308,6 +326,9 @@ class JaxTTV(Nbody):
         return tc_list
 
     def check_residuals(self, par_dict, jitters=None, student=True, normalize_residuals=True, plot=True, fit_mean=False):
+        """check the distribution of residuals, fit them with Student's t distritbution
+        """
+
         tc = self.get_transit_times_obs(par_dict)[0]
 
         if jitters is not None:
@@ -394,7 +415,7 @@ class JaxTTV(Nbody):
         return tc, tc2
 
     def sample_means_and_stds(self, samples, N=50, truncate=True, original_models=False):
-        """ compute mean and standard deviation of transit time models from HMC samples
+        """compute mean and standard deviation of transit time models from HMC samples
 
             Args:
                 samples: dictionary containing parameter samples (output of mcmc.get_samples())
@@ -427,7 +448,7 @@ class JaxTTV(Nbody):
     def plot_model(self, tcmodellist, tcobslist=None, errorobslist=None, t0_lin=None, p_lin=None, 
                tcmodelunclist=None, tmargin=None, save=None, marker=None, ylims=None, ylims_residual=None,
                unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
-        """ plot transit time model
+        """plot transit time model
 
             Args:
                 tcmodellist: list of the arrays of model transit times for each planet
@@ -500,7 +521,7 @@ class JaxTTV(Nbody):
 
 @partial(jit, static_argnums=(5,))
 def integrate_orbits_symplectic(xjac0, vjac0, masses, times, dt, nitr_kepler):
-    """ symplectic integration of the orbits
+    """symplectic integration of the orbits
 
         Args:
             xjac0: initial Jacobi positions (Norbit, xyz)

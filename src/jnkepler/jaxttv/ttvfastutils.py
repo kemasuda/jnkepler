@@ -1,4 +1,4 @@
-__all__ = ["params_for_ttvfast", "get_ttvfast_model", "get_ttvfast_model_all"]
+__all__ = ["params_for_ttvfast", "get_ttvfast_model",  "get_ttvfast_rv", "get_ttvfast_model_all"]
 
 import numpy as np
 import pandas as pd
@@ -72,7 +72,45 @@ def get_planets_smass(pdic, num_planets):
     return planets, float(pdic.star_mass)
 
 
-def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end):
+def get_ttvfast_model_rv(pdic, num_planets, t_start, dt, t_end, times_rv, skip_planet_idx=[]):
+    """ compute transit times using ttvfast-python
+
+        Args:
+            pdic: parameter dataframe from params_for_ttvfast
+            num_planets: number of planets
+            t_start: start time of integration
+            dt: integration time step
+            t_end: end time of integration
+            times_rv: times at which RVs are evaluated
+
+        Returns:
+            list of transit epochs
+            list of transit times
+            array of RVs
+
+    """
+    import ttvfast
+    planets, smass = get_planets_smass(pdic, num_planets)
+    ttvfast_results = ttvfast.ttvfast(planets, smass, t_start, dt, t_end, rv_times=list(times_rv))
+
+    idx_planet = np.array(ttvfast_results['positions'][0],'i')
+    transit_epochs = np.array(ttvfast_results['positions'][1],'i')
+    transit_times = np.array(ttvfast_results['positions'][2],'d')
+    rvs = np.array(ttvfast_results['rv'], 'd') * 1.495978707e11 / 86400.
+
+    tnums, tcs = [], []
+    for i in range(num_planets):
+        if i in skip_planet_idx:
+            continue
+        idx = (idx_planet == i) & (transit_times > -2)
+        tnum, tc = transit_epochs[idx], transit_times[idx]
+        tnums.append(tnum)
+        tcs.append(tc)
+
+    return tnums, tcs, rvs
+
+
+def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end, skip_planet_idx=[]):
     """ compute transit times using ttvfast-python
 
         Args:
@@ -97,6 +135,8 @@ def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end):
 
     tnums, tcs = [], []
     for i in range(num_planets):
+        if i in skip_planet_idx:
+            continue
         idx = (idx_planet == i) & (transit_times > -2)
         tnum, tc = transit_epochs[idx], transit_times[idx]
         tnums.append(tnum)
@@ -105,7 +145,7 @@ def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end):
     return tnums, tcs
 
 
-def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end):
+def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end, skip_planet_idx=[]):
     """ compute transit times using ttvfast-python
         
         Args:
@@ -114,6 +154,8 @@ def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end):
             t_start: start time of integration
             dt: integration time step
             t_end: end time of integration
+            skip_planet_idx: list of planet idx to be skipped from output (starting from 0)
+
         Returns:
             list of transit epochs
             list of transit times
@@ -133,6 +175,8 @@ def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end):
 
     tnums, tcs, rskys, vskys = [], [], [], []
     for i in range(num_planets):
+        if i in skip_planet_idx:
+            continue
         idx = (idx_planet == i) & (transit_times > -2)
         tnum, tc, rsky, vsky = transit_epochs[idx], transit_times[idx], transit_rsky[idx], transit_vsky[idx]
         tnums.append(tnum)
