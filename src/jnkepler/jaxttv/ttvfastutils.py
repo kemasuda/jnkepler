@@ -5,7 +5,7 @@ import pandas as pd
 from jax import jit, vmap
 from .utils import convert_elements
 
-def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_degrees=True,
+def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_degrees=True, 
                        names=["period", "eccentricity", "inclination", "argument", "longnode", "mean_anomaly"]):
     """ convert JaxTTV samples into TTVFast (or other) format
 
@@ -20,10 +20,10 @@ def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_de
             dataframe containing parameters
 
     """
-    def func(e, m):
-        return convert_elements(e, m, t_epoch, WHsplit=WHsplit)
-    convert_elements_map = jit(vmap(func, (0,0,), 0))
-    elements, masses = convert_elements_map(samples['elements'], samples['masses'])
+    def func(pdic):
+        return convert_elements(pdic, t_epoch, WHsplit=WHsplit)
+    convert_elements_map = jit(vmap(func, (0,), 0))
+    elements, masses = convert_elements_map(samples)
 
     pdic = {}
     for j in range(num_planets):
@@ -107,6 +107,7 @@ def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end):
 
 def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end):
     """ compute transit times using ttvfast-python
+        
         Args:
             pdic: parameter dataframe from params_for_ttvfast
             num_planets: number of planets
@@ -118,6 +119,7 @@ def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end):
             list of transit times
             list of sky-plane distances (au)
             list of sky-plane velocities (au/day)
+
     """
     import ttvfast
     planets, smass = get_planets_smass(pdic, num_planets)

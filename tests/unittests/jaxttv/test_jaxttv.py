@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import importlib_resources, pickle
 from jnkepler.tests import read_testdata_tc
 from jnkepler.jaxttv.ttvfastutils import params_for_ttvfast, get_ttvfast_model_all
+from jnkepler.jaxttv.utils import em_to_dict
 
 path = importlib_resources.files('jnkepler').joinpath('data')
 
@@ -23,12 +24,16 @@ def test_jaxttv():
 
 def test_get_transit_times_all():
     jttv, _, _, _ = read_testdata_tc()
+
     elements = np.loadtxt(path/"tcbug_elements.txt")
     masses = np.loadtxt(path/"tcbug_masses.txt")
+    pdic = em_to_dict(elements, masses)
 
-    tc_jttv, _, _ = jttv.get_transit_times_all(elements, masses)
+    tc_jttv, _, _ = jttv.get_transit_times_all(pdic)
 
-    pdic_ttvfast = params_for_ttvfast({"elements": np.array([elements]), "masses": np.array([masses])}, jttv.t_start, jttv.nplanet)
+    for key in pdic.keys():
+        pdic[key] = np.array([pdic[key]])
+    pdic_ttvfast = params_for_ttvfast(pdic, jttv.t_start, jttv.nplanet)
     _, tcs_ttvfast, _, _ = get_ttvfast_model_all(pdic_ttvfast.iloc[0], jttv.nplanet, jttv.t_start, jttv.dt, jttv.t_end)
     tcs_ttvfast = np.hstack(tcs_ttvfast)
 
@@ -36,8 +41,8 @@ def test_get_transit_times_all():
 
 
 def test_check_timing_precision():
-    jttv, params, _, _ = read_testdata_tc()
-    tc, tc2 = jttv.check_timing_precision(params)
+    jttv, _, _, pdic = read_testdata_tc()
+    tc, tc2 = jttv.check_timing_precision(pdic)
 
     assert np.isclose(np.max(np.abs(tc-tc2)), 6.10e-6)
 

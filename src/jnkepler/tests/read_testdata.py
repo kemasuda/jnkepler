@@ -12,7 +12,9 @@ def read_testdata_tc():
     """read test transit times
     
         Returns:
-            initialized JaxTTV class, parameter array, transit time array
+            initialized JaxTTV class, parameter array, transit time array, parameter dict
+            note that this dict 
+
     
     """
     path = pkg_resources.resource_filename('jnkepler', 'data/')
@@ -30,6 +32,7 @@ def read_testdata_tc():
     
     jttv = JaxTTV(t_start, t_end, dt, tcobs, p_init, errorobs=errorobs, print_info=False)
 
-    pdic = elements_to_pdic(*params_to_elements(params_test, 3))
+    pdic = elements_to_pdic(*params_to_elements(params_test, 3), force_coplanar=False)
+    pdic['pmass'] = pdic['mass']
     
     return jttv, params_test, tc_test, pdic

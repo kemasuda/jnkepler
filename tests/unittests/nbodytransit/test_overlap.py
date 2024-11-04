@@ -6,6 +6,7 @@ import pandas as pd
 import importlib_resources
 from jnkepler.nbodytransit import *
 from jax import config
+from jnkepler.jaxttv.utils import em_to_dict
 config.update('jax_enable_x64', True)
 
 #%%
@@ -23,6 +24,7 @@ def test_overlap():
     times_lc = jnp.array(pd.read_csv(path/"kep51_lc_photodtest.csv")['time'])
 
     elements, masses = np.loadtxt(path/"tcbug_elements.txt"), np.loadtxt(path/"tcbug_masses.txt")
+    pdic = em_to_dict(elements, masses)
     rstar, u1, u2 = 1., 0.5, 0.2
     prad = jnp.array([0.07, 0.05, 0.1])
 
@@ -32,8 +34,8 @@ def test_overlap():
     nt_ol = NbodyTransit(t_start, t_end, dt, tcobs, p_init, errorobs=errorobs, print_info=False)
     nt_ol.set_lcobs(times_lc, overlapping_transit=True)
 
-    lc_nool = nt.get_lc(elements, masses, rstar, prad, u1, u2)[0]
-    lc_ol = nt_ol.get_lc(elements, masses, rstar, prad, u1, u2)[0]
+    lc_nool = nt.get_lc(pdic, rstar, prad, u1, u2)[0]
+    lc_ol = nt_ol.get_lc(pdic, rstar, prad, u1, u2)[0]
 
     assert lc_ol == pytest.approx(lc_nool)
 

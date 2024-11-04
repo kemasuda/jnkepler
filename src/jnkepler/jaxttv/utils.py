@@ -1,21 +1,130 @@
 __all__ = [
     "initialize_jacobi_xv", "get_energy_diff", "get_energy_diff_jac",
-    "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map"
+    "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map", "params_to_dict", "em_to_dict"
 ]
 
 import jax.numpy as jnp
 from jax import jit, vmap, config
-from jax.lax import scan
-from .markley import get_E
-from .conversion import tic_to_u, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
-#from jax.config import config
+from .conversion import m_to_u, tic_to_m, tic_to_u, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
 config.update('jax_enable_x64', True)
 
 #%%
 M_earth = 3.0034893e-6
+       
+
+def params_to_dict(params, npl, keys): 
+    """convert 1D parameter array into parameter dict
+
+        Args:
+            parameter array: [arr for key1, arr for key2, ...] where len(arr) is the number of planets
+            npl: number of planets
+            keys: parameter keys [key1, key2, ...]
+
+        Returns:
+            parameter dict
+    
+    """
+    pdic = {}
+
+    for i,key in enumerate(keys):
+        pdic[key] = params[i*npl:(i+1)*npl]
+
+    return pdic
 
 
-def initialize_jacobi_xv(elements, masses, t_epoch):
+def em_to_dict(elements, masses):
+    """convert arrays of elements and masses in v0.1.0 to parameter dict
+
+    This function is mainly used in tests.
+    
+        Args:
+            elements: elements (JaxTTV format)
+            masses: masses of star + planets (solar units)
+
+        Returns:
+            parameter dict
+    
+    """
+    pdic = {}
+    for k,key in enumerate(["period", "ecosw", "esinw", "cosi", "lnode", "tic"]):
+        pdic[key] = elements[:,k]
+    pdic['pmass'] = masses[1:]
+    return pdic
+
+
+def initialize_jacobi_xv(par_dict, t_epoch):
+    """compute initial position/velocity from JaxTTV elements
+        
+    Here the elements are interpreted as Jacobi elements using the total interior mass (see Rein & Tamayo 2015).
+
+        Args:
+            par_dict: parameter dictionary that needs to contain
+                either (ecosw, esinw) or (e, omega)
+                cosi (set to be 0 if not specified)
+                lnode (set to be 0 if not specified)
+                either (time of inferior conjunction) or (mean anomaly)
+                stellar mass (set to be 1 if not specified), solar unit
+                either (planetary mass) or (ln planetary mass), solar unit
+            t_epoch: epoch at which elements are defined
+
+        Returns:
+            xjac, vjac: Jacobi positions and velocities at t_epoch (Norbit, xyz)
+            masses: 1D array of stellar and planetary masses (Nplanet+1,)
+
+    """
+    keys = par_dict.keys()
+
+    period = par_dict["period"]
+    
+    if "ecosw" in keys and "esinw" in keys:
+        ecosw, esinw = par_dict['ecosw'], par_dict['esinw']
+        ecc = jnp.sqrt(ecosw**2 + esinw**2)
+        omega = jnp.arctan2(esinw, ecosw)
+    elif "ecc" in keys and "omega" in keys:
+        ecc, omega = par_dict["ecc"], par_dict["omega"]
+    else:
+        raise ValueError("Either (ecosw, esinw) or (ecc, omega) needs to be provided.")
+    
+    if "cosi" in keys:
+        inc = jnp.arccos(par_dict["cosi"])
+    else:
+        inc = jnp.arccos(period * 0.)
+
+    if "lnode" in keys:
+        lnode = par_dict["lnode"]
+    else:
+        lnode = period * 0.
+
+    if "tic" in keys:
+        ma = tic_to_m(par_dict["tic"], period, ecc, omega, t_epoch)
+    elif "ma" in keys:
+        ma = par_dict["ma"]
+    else:
+        raise ValueError("Either tic (time of inf. conjunction) or ma (mean anom.) needs to be provided.")
+    u = m_to_u(ma, ecc) # eccentric anomaly
+
+    if "smass" in keys:
+        smass = par_dict["smass"]
+    else:
+        smass = 1. # in this case pmass should be considered as planet-to-star mass ratio
+
+    if "pmass" in keys:
+        masses = jnp.hstack([smass, par_dict['pmass']])
+    elif "lnpmass" in keys:
+        masses = jnp.hstack([smass, jnp.exp(par_dict['lnpmass'])])
+    else:
+        raise ValueError("Either pmass (solar unit) or lnpmass needs to be provided.")
+
+    xjac, vjac = [], []
+    for j in range(len(period)):
+        xj, vj = elements_to_xv(period[j], ecc[j], inc[j], omega[j], lnode[j], u[j], jnp.sum(masses[:j+2]))
+        xjac.append(xj)
+        vjac.append(vj)
+
+    return jnp.array(xjac), jnp.array(vjac), masses
+
+
+def _initialize_jacobi_xv(elements, masses, t_epoch):
     """ compute initial position/velocity from JaxTTV elements
         here the elements are interpreted as Jacobi using the total interior mass (see Rein & Tamayo 2015)
 
@@ -175,7 +284,7 @@ def params_to_elements(params, npl):
 
         Returns:
             elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
-            masses: masses of the bodies (Nbody,)
+            masses: ln(masses) of the bodies (Nbody,)
 
     """
     elements = jnp.array(params[:-npl].reshape(npl, -1))
@@ -183,12 +292,11 @@ def params_to_elements(params, npl):
     return elements, masses
 
 
-def convert_elements(elements, masses, t_epoch, WHsplit=False):
+def convert_elements(par_dict, t_epoch, WHsplit=False):
     """ convert JaxTTV elements into more normal sets of parameters
 
         Args:
-            params: JAX TTV parameter array
-            nplanet: number of orbits (planets)
+            par_dict: parameter dict
             t_epoch: epoch at which elements are defined
             WHsplit: elements are converted to coordinates assuming Wisdom-Holman splitting. This should be True when the output is used for TTVFast.
 
@@ -198,7 +306,7 @@ def convert_elements(elements, masses, t_epoch, WHsplit=False):
             angles are in radians
 
     """
-    xjac, vjac = initialize_jacobi_xv(elements, masses, t_epoch)
+    xjac, vjac, masses = initialize_jacobi_xv(par_dict, t_epoch)
 
     if WHsplit:
         # for H_Kepler defined in WH splitting (i.e. TTVFast)

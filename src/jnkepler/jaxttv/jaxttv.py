@@ -159,21 +159,20 @@ class JaxTTV(Nbody):
         return np.array(t0_new), np.array(p_new)
 
     @partial(jit, static_argnums=(0,))
-    def get_transit_times_obs(self, elements, masses):
+    def get_transit_times_obs(self, par_dict):
         """ compute model transit times (jitted version)
         This function returns only transit times that are closest to the observed ones.
         To get all the transit times, use get_transit_times_all instead.
 
             Args:
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
+                par_dict: dict containing parameters
 
             Returns:
                 1D flattened array of transit times
                 fractional energy change
 
-        """
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
+        """       
+        xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, self.t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
         orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
         tcobs1d = self.tcobs_flatten # 1D array of observed transit times
@@ -186,7 +185,7 @@ class JaxTTV(Nbody):
 
 
     @partial(jit, static_argnums=(0,))
-    def get_transit_times_and_rvs(self, elements, masses, times_rv):
+    def get_transit_times_and_rvs_obs(self, par_dict, times_rv):
         """ compute model transit times and stellar RVs
 
             Args:
@@ -200,7 +199,7 @@ class JaxTTV(Nbody):
                 fractional energy change
 
         """
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, self.t_start) # initial Jacobi position/velocity
+        xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, self.t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
         orbit_idx = self.pidx.astype(int) - 1 # idx for orbit, starting from 0
         tcobs1d = self.tcobs_flatten # 1D array of observed transit times
@@ -252,8 +251,8 @@ class JaxTTV(Nbody):
 
         return pidxall, tcall_linear, tcall_linear_flatten
     
-    @partial(jit, static_argnums=(0,3,4,5))
-    def get_transit_times_all(self, elements, masses, t_start=None, t_end=None, dt=None):
+    @partial(jit, static_argnums=(0,2,3,4))
+    def get_transit_times_all(self, par_dict, t_start=None, t_end=None, dt=None):
         """compute all model transit times between t_start and t_end
 
         This function is slower than get_ttvs and should not be used for fitting.
@@ -274,7 +273,7 @@ class JaxTTV(Nbody):
             times, t_start, dt, t_end = jnp.arange(t_start, t_end, dt), t_start, dt, t_end
 
         # compute 1D flattend transit times
-        xjac0, vjac0 = initialize_jacobi_xv(elements, masses, t_start) # initial Jacobi position/velocity
+        xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, t_start) # initial Jacobi position/velocity
         times, xvjac = integrate_xv(xjac0, vjac0, masses, times, nitr=self.nitr_kepler) # integration
         orbit_idx, _, tcobs1d = self.tcall_linear(t_start, t_end)
         orbit_idx = orbit_idx.astype(int) - 1 # start from 0
@@ -286,7 +285,7 @@ class JaxTTV(Nbody):
 
         return transit_times, ediff, orbit_idx
     
-    def get_transit_times_all_list(self, elements, masses, truncate=True):
+    def get_transit_times_all_list(self, par_dict, truncate=True):
         """compute all transit times and retunrs a list
         
             Args:
@@ -299,7 +298,7 @@ class JaxTTV(Nbody):
                 each element is an array of model transit times (length varies for each planet)
         
         """
-        tc_flatten, _, orbit_idx = self.get_transit_times_all(elements, masses)
+        tc_flatten, _, orbit_idx = self.get_transit_times_all(par_dict)
         tc_list = []
         for j in range(self.nplanet):
             tcj = tc_flatten[orbit_idx==j]
@@ -308,7 +307,9 @@ class JaxTTV(Nbody):
             tc_list.append(tcj)
         return tc_list
 
-    def check_residuals(self, tc, jitters=None, student=True, normalize_residuals=True, plot=True, fit_mean=False):
+    def check_residuals(self, par_dict, jitters=None, student=True, normalize_residuals=True, plot=True, fit_mean=False):
+        tc = self.get_transit_times_obs(par_dict)[0]
+
         if jitters is not None:
             jitters = np.atleast_1d(jitters)
             if len(jitters) == 1:
@@ -361,7 +362,7 @@ class JaxTTV(Nbody):
 
         return {'mean': np.mean(res), 'sd': np.std(res)}, params_st
 
-    def check_timing_precision(self, params, dtfrac=1e-3, nitr_transit=10, nitr_kepler=10):
+    def check_timing_precision(self, par_dict, dtfrac=1e-3, nitr_transit=10, nitr_kepler=10):
         """compare get_ttvs output with that computed with a smaller timestep to check the precision
 
             Args:
@@ -373,8 +374,7 @@ class JaxTTV(Nbody):
                 tc2: model transit times using a smaller timestep
 
         """
-        elements, masses = params_to_elements(params, self.nplanet)
-        tc, de = self.get_transit_times_obs(elements, masses)
+        tc, de = self.get_transit_times_obs(par_dict)
         print ("# fractional energy error (symplectic, dt=%.2e): %.2e" % (self.dt,de))
         
         dtcheck = self.p_init[0] * dtfrac
@@ -383,7 +383,7 @@ class JaxTTV(Nbody):
         self2.times = jnp.arange(self2.t_start, self2.t_end, self2.dt)
         self2.nitr_kepler = nitr_kepler
         self2.nitr_transit = nitr_transit 
-        tc2, de2 = self2.get_transit_times_obs(elements, masses)
+        tc2, de2 = self2.get_transit_times_obs(par_dict)
         intname = 'symplectic'
         print ("# fractional energy error (%s, dt=%.2e): %.2e" % (intname, dtcheck, de2))
 
@@ -407,11 +407,11 @@ class JaxTTV(Nbody):
 
         """
         np.random.seed(123)
-        sample_indices = np.random.randint(0, len(samples['masses']), N)
+        sample_indices = np.random.randint(0, len(samples['period']), N)
         models, means, stds = [], [], []
         for idx in sample_indices:
-            elements, masses = samples['elements'][idx], samples['masses'][idx]
-            tc_list = self.get_transit_times_all_list(elements, masses, truncate=truncate)
+            pdic_ = {key: val[idx] for key,val in samples.items()}
+            tc_list = self.get_transit_times_all_list(pdic_, truncate=truncate)
             models.append(tc_list)
 
         if original_models:

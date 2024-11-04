@@ -1,5 +1,5 @@
 __all__ = [
-    "reduce_angle", "tic_to_u", "tic_to_m", "elements_to_xv", "xv_to_elements",
+    "reduce_angle", "m_to_u", "tic_to_u", "tic_to_m", "elements_to_xv", "xv_to_elements",
     "jacobi_to_astrocentric", "j2a_map", "astrocentric_to_cm", "a2cm_map", "cm_to_astrocentric",
     "xvjac_to_xvacm", "xvjac_to_xvcm"
 ]
@@ -30,6 +30,10 @@ def reduce_angle(M):
     #return Mred
 
 
+def m_to_u(M, ecc):
+    return get_E(reduce_angle(M), ecc)
+
+
 def tic_to_u(tic, period, ecc, omega, t_epoch):
     """ convert time of inferior conjunction to eccentric anomaly u
 
@@ -44,6 +48,7 @@ def tic_to_u(tic, period, ecc, omega, t_epoch):
             eccentric anomaly at t_epoch
 
     """
+    # tic_to_m
     tanw2 = jnp.tan(0.5 * omega)
     uic = 2 * jnp.arctan( jnp.sqrt((1.-ecc)/(1.+ecc)) * (1.-tanw2)/(1.+tanw2) ) # u at t=tic
     M_epoch = 2 * jnp.pi / period * (t_epoch - tic) + uic - ecc * jnp.sin(uic) # M at t=0
