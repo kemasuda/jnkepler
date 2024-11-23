@@ -11,7 +11,8 @@ META_PATH = os.path.join("src", "jnkepler", "__init__.py")
 CLASSIFIERS = [
     "Programming Language :: Python",
 ]
-INSTALL_REQUIRES = []
+INSTALL_REQUIRES = ["jax", "jaxoplanet", "pandas", "jaxopt>=0.8.3", "ttvfast"]
+
 
 # END PROJECT SPECIFIC
 HERE = os.path.dirname(os.path.realpath(__file__))
