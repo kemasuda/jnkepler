@@ -1,13 +1,15 @@
-__all__ = ["params_for_ttvfast", "get_ttvfast_model",  "get_ttvfast_rv", "get_ttvfast_model_all"]
+__all__ = ["params_for_ttvfast", "get_ttvfast_model",
+           "get_ttvfast_rv", "get_ttvfast_model_all"]
 
 import numpy as np
 import pandas as pd
 from jax import jit, vmap
 from .utils import convert_elements
 
-def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_degrees=True, 
+
+def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_degrees=True,
                        names=["period", "eccentricity", "inclination", "argument", "longnode", "mean_anomaly"]):
-    """ convert JaxTTV samples into TTVFast (or other) format
+    """convert JaxTTV samples into TTVFast (or other) format
 
         Args:
             samples: mcmc.get_samples()
@@ -27,9 +29,9 @@ def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_de
 
     pdic = {}
     for j in range(num_planets):
-        pdic['planet_mass%d'%j] = masses[:,j+1]
-        for i,n in enumerate(names):
-            pdic[n+"%d"%j] = elements[:,i+1,j]
+        pdic['planet_mass%d' % j] = masses[:, j+1]
+        for i, n in enumerate(names):
+            pdic[n+"%d" % j] = elements[:, i+1, j]
     pdic['star_mass'] = masses[:, 0]
     pdic['num_planets'] = num_planets
     df = pd.DataFrame(data=pdic)
@@ -57,7 +59,7 @@ def get_planets_smass(pdic, num_planets):
     import ttvfast
     planets = []
     for i in range(num_planets):
-        pltag = "%d"%i
+        pltag = "%d" % i
         planet_tmp = ttvfast.models.Planet(
             mass=pdic['planet_mass'+pltag],
             period=pdic['period'+pltag],
@@ -91,11 +93,12 @@ def get_ttvfast_model_rv(pdic, num_planets, t_start, dt, t_end, times_rv, skip_p
     """
     import ttvfast
     planets, smass = get_planets_smass(pdic, num_planets)
-    ttvfast_results = ttvfast.ttvfast(planets, smass, t_start, dt, t_end, rv_times=list(times_rv))
+    ttvfast_results = ttvfast.ttvfast(
+        planets, smass, t_start, dt, t_end, rv_times=list(times_rv))
 
-    idx_planet = np.array(ttvfast_results['positions'][0],'i')
-    transit_epochs = np.array(ttvfast_results['positions'][1],'i')
-    transit_times = np.array(ttvfast_results['positions'][2],'d')
+    idx_planet = np.array(ttvfast_results['positions'][0], 'i')
+    transit_epochs = np.array(ttvfast_results['positions'][1], 'i')
+    transit_times = np.array(ttvfast_results['positions'][2], 'd')
     rvs = np.array(ttvfast_results['rv'], 'd') * 1.495978707e11 / 86400.
 
     tnums, tcs = [], []
@@ -129,9 +132,9 @@ def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end, skip_planet_idx=[])
     planets, smass = get_planets_smass(pdic, num_planets)
     ttvfast_results = ttvfast.ttvfast(planets, smass, t_start, dt, t_end)
 
-    idx_planet = np.array(ttvfast_results['positions'][0],'i')
-    transit_epochs = np.array(ttvfast_results['positions'][1],'i')
-    transit_times = np.array(ttvfast_results['positions'][2],'d')
+    idx_planet = np.array(ttvfast_results['positions'][0], 'i')
+    transit_epochs = np.array(ttvfast_results['positions'][1], 'i')
+    transit_times = np.array(ttvfast_results['positions'][2], 'd')
 
     tnums, tcs = [], []
     for i in range(num_planets):
@@ -147,7 +150,7 @@ def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end, skip_planet_idx=[])
 
 def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end, skip_planet_idx=[]):
     """ compute transit times using ttvfast-python
-        
+
         Args:
             pdic: parameter dataframe from params_for_ttvfast
             num_planets: number of planets
@@ -167,11 +170,11 @@ def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end, skip_planet_idx
     planets, smass = get_planets_smass(pdic, num_planets)
     ttvfast_results = ttvfast.ttvfast(planets, smass, t_start, dt, t_end)
 
-    idx_planet = np.array(ttvfast_results['positions'][0],'i')
-    transit_epochs = np.array(ttvfast_results['positions'][1],'i')
-    transit_times = np.array(ttvfast_results['positions'][2],'d')
-    transit_rsky = np.array(ttvfast_results['positions'][3],'d')
-    transit_vsky = np.array(ttvfast_results['positions'][4],'d')
+    idx_planet = np.array(ttvfast_results['positions'][0], 'i')
+    transit_epochs = np.array(ttvfast_results['positions'][1], 'i')
+    transit_times = np.array(ttvfast_results['positions'][2], 'd')
+    transit_rsky = np.array(ttvfast_results['positions'][3], 'd')
+    transit_vsky = np.array(ttvfast_results['positions'][4], 'd')
 
     tnums, tcs, rskys, vskys = [], [], [], []
     for i in range(num_planets):

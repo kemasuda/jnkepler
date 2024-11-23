@@ -13,6 +13,7 @@ import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
+
 def optim_svi(numpyro_model, step_size, num_steps, p_initial=None):
     """optimization using Stochastic Variational Inference (SVI)
 
@@ -27,11 +28,13 @@ def optim_svi(numpyro_model, step_size, num_steps, p_initial=None):
 
     """
     optimizer = numpyro.optim.Adam(step_size=step_size)
-    
+
     if p_initial is None:
-        guide = AutoLaplaceApproximation(numpyro_model, init_loc_fn=init_to_sample)
+        guide = AutoLaplaceApproximation(
+            numpyro_model, init_loc_fn=init_to_sample)
     else:
-        guide = AutoLaplaceApproximation(numpyro_model, init_loc_fn=init_to_value(values=p_initial))
+        guide = AutoLaplaceApproximation(
+            numpyro_model, init_loc_fn=init_to_value(values=p_initial))
 
     # SVI object
     svi = SVI(numpyro_model, guide, optimizer, loss=Trace_ELBO())
@@ -46,12 +49,12 @@ def optim_svi(numpyro_model, step_size, num_steps, p_initial=None):
 
 def fit_t_distribution(y, plot=True, fit_mean=False):
     """fit Student's t distribution to a sample y
-    
+
         Args:
             y: 1D array
             plot: if True, plot results
             fit_mean: if True, mean of the distribution is also fitted
-            
+
         Returns: 
             dictionary {
                 lndf_loc: mean of log(dof),
@@ -61,18 +64,22 @@ def fit_t_distribution(y, plot=True, fit_mean=False):
                 mean_loc: mean of mean (if fitted),
                 mean_scale: std of mean (if fitted)
             }
-    
+
     """
     def model(y):
-        logdf = numpyro.sample("lndf", dist.Uniform(jnp.log(0.1), jnp.log(100)))
+        logdf = numpyro.sample(
+            "lndf", dist.Uniform(jnp.log(0.1), jnp.log(100)))
         logvar = numpyro.sample("lnvar", dist.Uniform(-2, 10))
         df = numpyro.deterministic("df", jnp.exp(logdf))
         v1 = numpyro.deterministic("v1", jnp.exp(logvar))
         if fit_mean:
-            mean = numpyro.sample("mean", dist.Uniform(-jnp.std(y), jnp.std(y)))
-            numpyro.sample("obs", dist.StudentT(loc=mean, scale=jnp.sqrt(v1), df=df), obs=y)
+            mean = numpyro.sample(
+                "mean", dist.Uniform(-jnp.std(y), jnp.std(y)))
+            numpyro.sample("obs", dist.StudentT(
+                loc=mean, scale=jnp.sqrt(v1), df=df), obs=y)
         else:
-            numpyro.sample("obs", dist.StudentT(scale=jnp.sqrt(v1), df=df), obs=y)
+            numpyro.sample("obs", dist.StudentT(
+                scale=jnp.sqrt(v1), df=df), obs=y)
 
     kernel = numpyro.infer.NUTS(model)
     mcmc = numpyro.infer.MCMC(kernel, num_warmup=500, num_samples=500)
@@ -83,7 +90,8 @@ def fit_t_distribution(y, plot=True, fit_mean=False):
     samples = mcmc.get_samples()
     lndf, lnvar = np.mean(samples['lndf']), np.mean(samples['lnvar'])
     lndf_sd, lnvar_sd = np.std(samples['lndf']), np.std(samples['lnvar'])
-    pout = {'lndf_loc': lndf, 'lndf_scale': lndf_sd, 'lnvar_loc': lnvar, 'lnvar_scale': lnvar_sd}
+    pout = {'lndf_loc': lndf, 'lndf_scale': lndf_sd,
+            'lnvar_loc': lnvar, 'lnvar_scale': lnvar_sd}
     if fit_mean:
         mean, mean_sd = np.mean(samples['mean']), np.std(samples['mean'])
         pout['mean_loc'] = mean
@@ -93,36 +101,37 @@ def fit_t_distribution(y, plot=True, fit_mean=False):
 
     if plot:
         sd = np.std(y)
-        fig, ax = plt.subplots(1, 2, figsize=(16,4))
+        fig, ax = plt.subplots(1, 2, figsize=(16, 4))
         ax[1].set_yscale("log")
         ax[1].set_ylabel("PDF")
         ax[0].set_ylabel("CDF")
         ax[0].set_xlabel("residual / assigned error")
         ax[1].set_xlabel("residual / assigned error")
-        ax[1].hist(y, histtype='step', lw=3, alpha=0.6, density=True, color='gray')
+        ax[1].hist(y, histtype='step', lw=3, alpha=0.6,
+                   density=True, color='gray')
         ymin, ymax = plt.gca().get_ylim()
         ax[1].set_ylim(ymin/5., ymax*1.5)
         x0 = np.linspace(-5, 5, 100)
-        ax[1].plot(x0, norm(scale=sd).pdf(x0), lw=1, color='C0', ls='dashed', 
-                label='normal, $\mathrm{SD}=%.2f$'%sd)
-        ax[1].plot(x0, norm.pdf(x0), lw=1, color='C0', ls='dotted', 
-                label='normal, $\mathrm{SD}=1$')
-        ax[1].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).pdf(x0), 
-        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)'%(lndf, lnvar, mean))
-        #ax[1].legend(loc='upper right', bbox_to_anchor=(1.5,1))
+        ax[1].plot(x0, norm(scale=sd).pdf(x0), lw=1, color='C0', ls='dashed',
+                   label='normal, $\mathrm{SD}=%.2f$' % sd)
+        ax[1].plot(x0, norm.pdf(x0), lw=1, color='C0', ls='dotted',
+                   label='normal, $\mathrm{SD}=1$')
+        ax[1].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).pdf(x0),
+                   label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)' % (lndf, lnvar, mean))
+        # ax[1].legend(loc='upper right', bbox_to_anchor=(1.5,1))
 
-        #ax[0].hist(y, bins=len(y), histtype='step', lw=3, alpha=0.6, density=True, cumulative=True, color='red')
+        # ax[0].hist(y, bins=len(y), histtype='step', lw=3, alpha=0.6, density=True, cumulative=True, color='red')
         ysum = np.ones_like(y)
         hist, edge = np.histogram(y, bins=len(y))
-        ax[0].plot(np.r_[x0[0], edge[0], edge[:-1], edge[-1], x0[-1]], 
-                np.r_[0, 0, np.cumsum(hist)/len(y), 1, 1], lw=3, alpha=0.6, color='gray')
-        #ax[0].plot(np.sort(y), np.cumsum(ysum)/len(ysum), lw=3, alpha=0.6, color='gray')
-        ax[0].plot(x0, norm(loc=0, scale=sd).cdf(x0), lw=1, color='C0', ls='dashed', 
-                label='normal, $\mathrm{SD}=%.2f$'%sd)
-        ax[0].plot(x0, norm.cdf(x0), lw=1, color='C0', ls='dotted', 
-                label='normal, $\mathrm{SD}=1$')
-        ax[0].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).cdf(x0), 
-        label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)'%(lndf, lnvar, mean))
+        ax[0].plot(np.r_[x0[0], edge[0], edge[:-1], edge[-1], x0[-1]],
+                   np.r_[0, 0, np.cumsum(hist)/len(y), 1, 1], lw=3, alpha=0.6, color='gray')
+        # ax[0].plot(np.sort(y), np.cumsum(ysum)/len(ysum), lw=3, alpha=0.6, color='gray')
+        ax[0].plot(x0, norm(loc=0, scale=sd).cdf(x0), lw=1, color='C0', ls='dashed',
+                   label='normal, $\mathrm{SD}=%.2f$' % sd)
+        ax[0].plot(x0, norm.cdf(x0), lw=1, color='C0', ls='dotted',
+                   label='normal, $\mathrm{SD}=1$')
+        ax[0].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).cdf(x0),
+                   label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)' % (lndf, lnvar, mean))
         ax[0].legend(loc='upper left', fontsize=14)
 
     return pout

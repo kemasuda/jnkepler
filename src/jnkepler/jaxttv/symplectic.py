@@ -9,7 +9,6 @@ import jax.numpy as jnp
 from jax import jit, vmap, grad, config
 from jax.lax import scan
 from .conversion import jacobi_to_astrocentric, BIG_G
-#from jax.config import config
 config.update('jax_enable_x64', True)
 
 
@@ -25,7 +24,7 @@ def dEstep(x, ecosE0, esinE0, dM):
             delta(eccentric anomaly) from single iteration
 
     """
-    x2 = x / 2.0 # x = deltaE
+    x2 = x / 2.0  # x = deltaE
     sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
     sx, cx = 2.0*sx2*cx2, cx2*cx2 - sx2*sx2
     f = x + 2.0*sx2*(sx2*esinE0 - cx2*ecosE0) - dM
@@ -63,6 +62,7 @@ def kepler_step(x, v, gm, dt, nitr=3):
     ecosE0, esinE0 = 1. - r0 / a, u / (n*a*a)
 
     dM = n * dt
+
     def step(x, i):
         return dEstep(x, ecosE0, esinE0, dM), None
     dE, _ = scan(step, dM, jnp.arange(nitr))
@@ -76,8 +76,8 @@ def kepler_step(x, v, gm, dt, nitr=3):
     fdot = -(a/(r0*fp))*n*sx
     gdot = (1.0 + g*fdot)/f
 
-    x_new = f[:,None] * x + g[:,None] * v
-    v_new = fdot[:,None] * x + gdot[:,None] * v
+    x_new = f[:, None] * x + g[:, None] * v
+    v_new = fdot[:, None] * x + gdot[:, None] * v
 
     return x_new, v_new
 
@@ -103,16 +103,17 @@ def Hint(x, v, masses):
     ri0 = jnp.sqrt(jnp.sum(xast * xast, axis=1))
     Hint -= jnp.sum(mu / ri0)
 
-    xjk = jnp.transpose(xast[:,None] - xast[None, :], axes=[0,2,1])
+    xjk = jnp.transpose(xast[:, None] - xast[None, :], axes=[0, 2, 1])
     x2jk = jnp.sum(xjk * xjk, axis=1)
     nzidx = x2jk != 0.
     x2jk = jnp.where(nzidx, x2jk, 1.)
-    xjkinv = jnp.where(nzidx, jnp.sqrt( 1. / x2jk ), 0.)
-    Hint -= 0.5 * jnp.sum(mu[:,None] * mu[None,:] * xjkinv)
+    xjkinv = jnp.where(nzidx, jnp.sqrt(1. / x2jk), 0.)
+    Hint -= 0.5 * jnp.sum(mu[:, None] * mu[None, :] * xjkinv)
 
     return Hint
 
-gHint = grad(Hint) # default to argnums=0
+
+gHint = grad(Hint)  # default to argnums=0
 
 
 def Hintgrad(x, v, masses):
@@ -128,7 +129,7 @@ def Hintgrad(x, v, masses):
 
 
     """
-    return gHint(x, v, masses) * (masses[0] / masses[1:])[:,None]
+    return gHint(x, v, masses) * (masses[0] / masses[1:])[:, None]
 
 
 def nbody_kicks(x, v, ki, masses, dt):
@@ -164,12 +165,14 @@ def integrate_xv(x, v, masses, times, nitr=3):
             Jacobi position/velocity array (Nstep, x or v, Norbit, xyz)
 
     """
-    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
+    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / \
+        jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
     dtarr = jnp.diff(times)
 
     # transformation between the mapping and real Hamiltonian
     x, v = real_to_mapTO(x, v, ki, masses, dtarr[0])
-    x, v = kepler_step(x, v, ki, dtarr[0]*0.5, nitr=nitr) # dt/2 ahead of the starting time
+    # dt/2 ahead of the starting time
+    x, v = kepler_step(x, v, ki, dtarr[0]*0.5, nitr=nitr)
 
     # advance the system by dt
     def step(xvin, dt):
@@ -196,9 +199,11 @@ def kepler_step_map(xjac, vjac, masses, dt, nitr=3):
             new Jacobi positions and velocities (Ntime, x or v, Norbit, xyz)
 
     """
-    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
-    step = lambda x, v: kepler_step(x, v, ki, dt, nitr=nitr)
-    step_map = vmap(step, (0,0), 0)
+    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / \
+        jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
+
+    def step(x, v): return kepler_step(x, v, ki, dt, nitr=nitr)
+    step_map = vmap(step, (0, 0), 0)
     return step_map(xjac, vjac)
 
 
@@ -215,11 +220,13 @@ def kick_kepler_map(xjac, vjac, masses, dt, nitr=3):
             new jacobi positions and velocities (Ntime, x or v, Norbit, xyz)
 
     """
-    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
+    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / \
+        jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
+
     def kick_kepler(x, v):
         x, v = nbody_kicks(x, v, ki, masses, 2*dt)
         return kepler_step(x, v, ki, dt, nitr=nitr)
-    func_map = vmap(kick_kepler, (0,0), 0)
+    func_map = vmap(kick_kepler, (0, 0), 0)
     return func_map(xjac, vjac)
 
 

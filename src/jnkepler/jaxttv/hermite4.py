@@ -5,12 +5,11 @@ __all__ = [
     "hermite4_step_map", "integrate_xv",
 ]
 
-#%%
+
 import jax.numpy as jnp
 from jax import jit, vmap, grad, config
 from jax.lax import scan
 from .conversion import BIG_G
-#from jax.config import config
 config.update('jax_enable_x64', True)
 
 
@@ -27,12 +26,12 @@ def get_derivs(x, v, masses):
             adot: time derivatives of accelerations (Norbit, xyz)
 
     """
-    xjk = jnp.transpose(x[:,None] - x[None, :], axes=[0,2,1])
-    vjk = jnp.transpose(v[:,None] - v[None, :], axes=[0,2,1])
-    x2jk = jnp.sum(xjk * xjk, axis=1)[:,None,:]
-    xvjk = jnp.sum(xjk * vjk, axis=1)[:,None,:]
+    xjk = jnp.transpose(x[:, None] - x[None, :], axes=[0, 2, 1])
+    vjk = jnp.transpose(v[:, None] - v[None, :], axes=[0, 2, 1])
+    x2jk = jnp.sum(xjk * xjk, axis=1)[:, None, :]
+    xvjk = jnp.sum(xjk * vjk, axis=1)[:, None, :]
 
-    x2jk = jnp.where(x2jk!=0., x2jk, jnp.inf)
+    x2jk = jnp.where(x2jk != 0., x2jk, jnp.inf)
     x2jkinv = 1. / x2jk
     x2jkinv1p5 = x2jkinv * jnp.sqrt(x2jkinv)
     Xjk = - xjk * x2jkinv1p5
@@ -104,8 +103,10 @@ def hermite4_step(x, v, masses, dt):
     xc, vc = correct(xp, vp, a1, dota1, a, dota, dt)
     return xc, vc, a1
 
+
 # map along the 1st axes of x, v, dt (Ntransits)
-hermite4_step_map = jit(vmap(hermite4_step, (0,0,None,0), 2)) # xva, body idx, xyz, transit idx
+# xva, body idx, xyz, transit idx
+hermite4_step_map = jit(vmap(hermite4_step, (0, 0, None, 0), 2))
 
 
 def integrate_xv(x, v, masses, times):
@@ -132,6 +133,7 @@ def integrate_xv(x, v, masses, times):
     _, xv = scan(step, [x, v], dtarr)
 
     return times[1:], xv
+
 
 """
 def integrate_elements(elements, masses, times, t_epoch):

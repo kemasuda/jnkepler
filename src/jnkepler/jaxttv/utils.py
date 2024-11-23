@@ -1,3 +1,4 @@
+from .symplectic import kepler_step_map
 __all__ = [
     "initialize_jacobi_xv", "get_energy_diff", "get_energy_diff_jac",
     "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map", "params_to_dict", "em_to_dict"
@@ -8,11 +9,11 @@ from jax import jit, vmap, config
 from .conversion import m_to_u, tic_to_m, tic_to_u, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
 config.update('jax_enable_x64', True)
 
-#%%
-M_earth = 3.0034893e-6
-       
 
-def params_to_dict(params, npl, keys): 
+M_earth = 3.0034893e-6
+
+
+def params_to_dict(params, npl, keys):
     """convert 1D parameter array into parameter dict
 
         Args:
@@ -22,11 +23,11 @@ def params_to_dict(params, npl, keys):
 
         Returns:
             parameter dict
-    
+
     """
     pdic = {}
 
-    for i,key in enumerate(keys):
+    for i, key in enumerate(keys):
         pdic[key] = params[i*npl:(i+1)*npl]
 
     return pdic
@@ -36,25 +37,25 @@ def em_to_dict(elements, masses):
     """convert arrays of elements and masses in v0.1.0 to parameter dict
 
     This function is mainly used in tests.
-    
+
         Args:
             elements: elements (JaxTTV format)
             masses: masses of star + planets (solar units)
 
         Returns:
             parameter dict
-    
+
     """
     pdic = {}
-    for k,key in enumerate(["period", "ecosw", "esinw", "cosi", "lnode", "tic"]):
-        pdic[key] = elements[:,k]
+    for k, key in enumerate(["period", "ecosw", "esinw", "cosi", "lnode", "tic"]):
+        pdic[key] = elements[:, k]
     pdic['pmass'] = masses[1:]
     return pdic
 
 
 def initialize_jacobi_xv(par_dict, t_epoch):
     """compute initial position/velocity from JaxTTV elements
-        
+
     Here the elements are interpreted as Jacobi elements using the total interior mass (see Rein & Tamayo 2015).
 
         Args:
@@ -75,7 +76,7 @@ def initialize_jacobi_xv(par_dict, t_epoch):
     keys = par_dict.keys()
 
     period = par_dict["period"]
-    
+
     if "ecosw" in keys and "esinw" in keys:
         ecosw, esinw = par_dict['ecosw'], par_dict['esinw']
         ecc = jnp.sqrt(ecosw**2 + esinw**2)
@@ -83,8 +84,9 @@ def initialize_jacobi_xv(par_dict, t_epoch):
     elif "ecc" in keys and "omega" in keys:
         ecc, omega = par_dict["ecc"], par_dict["omega"]
     else:
-        raise ValueError("Either (ecosw, esinw) or (ecc, omega) needs to be provided.")
-    
+        raise ValueError(
+            "Either (ecosw, esinw) or (ecc, omega) needs to be provided.")
+
     if "cosi" in keys:
         inc = jnp.arccos(par_dict["cosi"])
     else:
@@ -100,24 +102,27 @@ def initialize_jacobi_xv(par_dict, t_epoch):
     elif "ma" in keys:
         ma = par_dict["ma"]
     else:
-        raise ValueError("Either tic (time of inf. conjunction) or ma (mean anom.) needs to be provided.")
-    u = m_to_u(ma, ecc) # eccentric anomaly
+        raise ValueError(
+            "Either tic (time of inf. conjunction) or ma (mean anom.) needs to be provided.")
+    u = m_to_u(ma, ecc)  # eccentric anomaly
 
     if "smass" in keys:
         smass = par_dict["smass"]
     else:
-        smass = 1. # in this case pmass should be considered as planet-to-star mass ratio
+        smass = 1.  # in this case pmass should be considered as planet-to-star mass ratio
 
     if "pmass" in keys:
         masses = jnp.hstack([smass, par_dict['pmass']])
     elif "lnpmass" in keys:
         masses = jnp.hstack([smass, jnp.exp(par_dict['lnpmass'])])
     else:
-        raise ValueError("Either pmass (solar unit) or lnpmass needs to be provided.")
+        raise ValueError(
+            "Either pmass (solar unit) or lnpmass needs to be provided.")
 
     xjac, vjac = [], []
     for j in range(len(period)):
-        xj, vj = elements_to_xv(period[j], ecc[j], inc[j], omega[j], lnode[j], u[j], jnp.sum(masses[:j+2]))
+        xj, vj = elements_to_xv(
+            period[j], ecc[j], inc[j], omega[j], lnode[j], u[j], jnp.sum(masses[:j+2]))
         xjac.append(xj)
         vjac.append(vj)
 
@@ -145,11 +150,13 @@ def _initialize_jacobi_xv(elements, masses, t_epoch):
         inc = jnp.arccos(cosi)
 
         u = tic_to_u(tic, porb, ecc, omega, t_epoch)
-        xj, vj = elements_to_xv(porb, ecc, inc, omega, lnode, u, jnp.sum(masses[:j+2]))
+        xj, vj = elements_to_xv(porb, ecc, inc, omega,
+                                lnode, u, jnp.sum(masses[:j+2]))
         xjac.append(xj)
         vjac.append(vj)
 
     return jnp.array(xjac), jnp.array(vjac)
+
 
 @jit
 def get_energy(x, v, masses):
@@ -165,13 +172,15 @@ def get_energy(x, v, masses):
 
     """
     K = jnp.sum(0.5 * masses * jnp.sum(v*v, axis=1))
-    X = x[:,None] - x[None,:]
-    M = masses[:,None] * masses[None,:]
+    X = x[:, None] - x[None, :]
+    M = masses[:, None] * masses[None, :]
     U = -BIG_G * jnp.sum(M * jnp.tril(1./jnp.sqrt(jnp.sum(X*X, axis=2)), k=-1))
     return K + U
 
+
 # map along the 1st axes of x and v (Nstep)
-get_energy_map = jit(vmap(get_energy, (0,0,None), 0))
+get_energy_map = jit(vmap(get_energy, (0, 0, None), 0))
+
 
 @jit
 def get_energy_diff(xva, masses):
@@ -185,8 +194,8 @@ def get_energy_diff(xva, masses):
             fractional change in total energy
 
     """
-    _xva = jnp.array([xva[0,:,:,:], xva[-1,:,:,:]])
-    etot = get_energy_map(_xva[:,0,:,:], _xva[:,1,:,:], masses)
+    _xva = jnp.array([xva[0, :, :, :], xva[-1, :, :, :]])
+    etot = get_energy_map(_xva[:, 0, :, :], _xva[:, 1, :, :], masses)
     return etot[1]/etot[0] - 1.
 
 
@@ -210,7 +219,6 @@ def get_energy_diff_jac(xvjac, masses):
 '''
 
 
-from .symplectic import kepler_step_map
 @jit
 def get_energy_diff_jac(xvjac, masses, dt):
     """ compute fractional energy change given integration result
@@ -224,7 +232,8 @@ def get_energy_diff_jac(xvjac, masses, dt):
 
     """
     xvjac_ends = jnp.array([xvjac[0], xvjac[-1]])
-    xjac_ends_correct, vjac_ends_correct = kepler_step_map(xvjac_ends[:,0,:,:], xvjac_ends[:,1,:,:], masses, dt)
+    xjac_ends_correct, vjac_ends_correct = kepler_step_map(
+        xvjac_ends[:, 0, :, :], xvjac_ends[:, 1, :, :], masses, dt)
     xcm, vcm = xvjac_to_xvcm(xjac_ends_correct, vjac_ends_correct, masses)
     etot = get_energy_map(xcm, vcm, masses)
     return etot[1]/etot[0] - 1.
@@ -310,7 +319,8 @@ def convert_elements(par_dict, t_epoch, WHsplit=False):
 
     if WHsplit:
         # for H_Kepler defined in WH splitting (i.e. TTVFast)
-        ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
+        ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / \
+            jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
     else:
         # total interior mass
         ki = BIG_G * jnp.cumsum(masses)[1:]
@@ -329,6 +339,6 @@ def findidx_map(arr1, arr2):
             indices of arr1 nearest to each element in arr2
 
     """
-    func = lambda arr1, val: jnp.argmin(jnp.abs(arr1 - val))
-    func_map = jit(vmap(func, (None,0), 0))
+    def func(arr1, val): return jnp.argmin(jnp.abs(arr1 - val))
+    func_map = jit(vmap(func, (None, 0), 0))
     return func_map(arr1, arr2)
