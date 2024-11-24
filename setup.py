@@ -11,8 +11,7 @@ META_PATH = os.path.join("src", "jnkepler", "__init__.py")
 CLASSIFIERS = [
     "Programming Language :: Python",
 ]
-INSTALL_REQUIRES = ["jax", "jaxoplanet", "pandas",
-                    "jaxopt>=0.8.3", "importlib_resources"]
+INSTALL_REQUIRES = ["jax", "pandas", "importlib_resources"]
 
 
 # END PROJECT SPECIFIC

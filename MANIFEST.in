@@ -17,5 +17,11 @@ include src/jnkepler/data/kep51_nbodytransit_optim.npy
 include src/jnkepler/data/kep51_4planet.csv
 include src/jnkepler/data/kep51_4planet_sol.csv
 include src/jnkepler/data/kep51_4planet_sol-2.csv
+include src/jnkepler/data/tcs_ttvfast_for_test-all.txt
+include src/jnkepler/data/tcs_ttvfast_for_test-nontransiting.txt
+include src/jnkepler/data/tcs_ttvfast_for_test-obs-nontransiting.txt
+include src/jnkepler/data/tcs_ttvfast_for_test-obs-nontransiting2.txt
+include src/jnkepler/data/tcs_ttvfast_for_test-ttandrv.txt
+include src/jnkepler/data/rvs_ttvfast_for_test-ttandrv.txt
 
 global-exclude *.py[co]
