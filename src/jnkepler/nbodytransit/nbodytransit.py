@@ -1,6 +1,7 @@
+from ..jaxttv.rv import *
+from .transit import *
 __all__ = ["NbodyTransit", "q_to_u", "b_to_cosi"]
 
-#%%
 import numpy as np
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
@@ -12,14 +13,12 @@ from ..jaxttv.findtransit import *
 from ..jaxttv.symplectic import integrate_xv, kepler_step_map
 from ..jaxttv.hermite4 import integrate_xv as integrate_xv_hermite4
 from jax import jit, grad, config
-#from jax.config import config
 config.update('jax_enable_x64', True)
 
-#%%
-from .transit import *
-from ..jaxttv.rv import *
+
 class NbodyTransit(JaxTTV):
     """ main class for photodynamical analysis """
+
     def set_lcobs(self, times_lc, overlapping_transit=False, exposure_time=29.4/1440., supersample_factor=10, print_info=True):
         """ initialization
 
@@ -40,26 +39,30 @@ class NbodyTransit(JaxTTV):
             dt = exposure_time / (self.supersample_num - 1)
             dtarr = np.linspace(0, exposure_time, self.supersample_num)
             dtarr -= np.median(dtarr)
-            self.times_super = (times_lc[:,None] + dtarr).ravel()
+            self.times_super = (times_lc[:, None] + dtarr).ravel()
 
         times_transit_idx, times_planet_idx = [], []
         for j in range(self.nplanet):
-            tcj = np.where(self.pidx==j+1, self.tcobs_flatten, -np.inf)
+            tcj = np.where(self.pidx == j+1, self.tcobs_flatten, -np.inf)
             _tidx = findidx_map(tcj, self.times_super)
             _pidx = jnp.ones_like(_tidx) * j
             times_transit_idx.append(_tidx)
             times_planet_idx.append(_pidx)
         self.times_transit_idx = jnp.array(times_transit_idx)
         self.times_planet_idx = jnp.array(times_planet_idx)
-        self.times_transit_idx_nool = findidx_map(self.tcobs_flatten, self.times_super)
-        self.times_planet_idx_nool = self.pidx[self.times_transit_idx_nool].astype(int) - 1
+        self.times_transit_idx_nool = findidx_map(
+            self.tcobs_flatten, self.times_super)
+        self.times_planet_idx_nool = self.pidx[self.times_transit_idx_nool].astype(
+            int) - 1
         self.overlapping_transit = overlapping_transit
 
         if print_info:
-            print ("# exposure time (min):".ljust(35) + "%.1f"%(exposure_time*1440))
-            print ("# supersampling factor:".ljust(35) + "%d"%(self.supersample_num-1))
+            print("# exposure time (min):".ljust(
+                35) + "%.1f" % (exposure_time*1440))
+            print("# supersampling factor:".ljust(35) + "%d" %
+                  (self.supersample_num-1))
             if not self.overlapping_transit:
-                print ("# overlapping transit ignored.".ljust(35))
+                print("# overlapping transit ignored.".ljust(35))
 
     def get_xvsky_tc(self, par_dict):
         """ compute sky-plane positions and velocities at transit centers
@@ -74,11 +77,14 @@ class NbodyTransit(JaxTTV):
                 vsky_tc: astrocentric velocities in the sky plane at transit centers (Ntransit, xy)
 
         """
-        xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, self.t_start) # initial Jacobi position/velocity
-        times, xvjac = integrate_xv(xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler) # integration
-        pidxarr = self.pidx.astype(int) # idx for planet, starting from 1
+        xjac0, vjac0, masses = initialize_jacobi_xv(
+            par_dict, self.t_start)  # initial Jacobi position/velocity
+        times, xvjac = integrate_xv(
+            xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler)  # integration
+        pidxarr = self.pidx.astype(int)  # idx for planet, starting from 1
         tcobs1d = self.tcobs_flatten
-        tc, (xcm, vcm, _) = find_transit_params_all(pidxarr-1, tcobs1d, times, xvjac, masses)
+        tc, (xcm, vcm, _) = find_transit_params_all(
+            pidxarr-1, tcobs1d, times, xvjac, masses)
         xsky_tc, vsky_tc = get_xvast_map(xcm, vcm, pidxarr)
         return tc, xsky_tc, vsky_tc
 
@@ -101,11 +107,14 @@ class NbodyTransit(JaxTTV):
         tc, xsky_tc, vsky_tc = self.get_xvsky_tc(par_dict)
 
         if self.overlapping_transit:
-            nbodyflux_ss = compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
+            nbodyflux_ss = compute_nbody_flux(
+                rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
         else:
-            nbodyflux_ss = compute_nbody_flux_nooverlap(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx_nool, self.times_planet_idx_nool)
+            nbodyflux_ss = compute_nbody_flux_nooverlap(
+                rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx_nool, self.times_planet_idx_nool)
 
-        nbodyflux = jnp.mean(nbodyflux_ss.reshape(-1, self.supersample_num), axis=1)
+        nbodyflux = jnp.mean(
+            nbodyflux_ss.reshape(-1, self.supersample_num), axis=1)
 
         return nbodyflux, tc
 
@@ -130,11 +139,14 @@ class NbodyTransit(JaxTTV):
         tc, xsky_tc, vsky_tc = self.get_xvsky_tc(par_dict)
 
         if self.overlapping_transit:
-            nbodyflux_ss = compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
+            nbodyflux_ss = compute_nbody_flux(
+                rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
         else:
-            nbodyflux_ss = compute_nbody_flux_nooverlap(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx_nool, self.times_planet_idx_nool)
+            nbodyflux_ss = compute_nbody_flux_nooverlap(
+                rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx_nool, self.times_planet_idx_nool)
 
-        nbodyflux = jnp.mean(nbodyflux_ss.reshape(-1, self.supersample_num), axis=1)
+        nbodyflux = jnp.mean(
+            nbodyflux_ss.reshape(-1, self.supersample_num), axis=1)
         nbodyrv = rv_from_xvjac(times_rv, times, xvjac, masses)
 
         return nbodyflux, tc, nbodyrv
@@ -171,46 +183,52 @@ class NbodyTransit(JaxTTV):
 
         def objective(p):
             u1, u2 = q_to_u(p['q1'], p['q2'])
-            par_dict['cosi'] = b_to_cosi(p['b'], par_dict['period'], par_dict['ecosw'], par_dict['esinw'], p['rstar'])
+            par_dict['cosi'] = b_to_cosi(
+                p['b'], par_dict['period'], par_dict['ecosw'], par_dict['esinw'], p['rstar'])
             model = self.get_lc(par_dict, p['rstar'], p['prad'], u1, u2)[0]
             return jnp.sum(((fluxes - model) / errors)**2)
 
         solver = jaxopt.ScipyBoundedMinimize(fun=objective, method=method)
-        print ("# initial objective function:", objective(p_init))
-        print ()
+        print("# initial objective function:", objective(p_init))
+        print()
 
         # optimize radii
-        p_low = {"rstar": 0., "prad": zeros, "q1": 0, "q2": 0, "b": p_init['b']}
-        p_upp = {"rstar": p_init['rstar']*2, "prad": ones*pradmax, "q1": 1, "q2": 1, "b": p_init['b']}
+        p_low = {"rstar": 0., "prad": zeros,
+                 "q1": 0, "q2": 0, "b": p_init['b']}
+        p_upp = {"rstar": p_init['rstar']*2, "prad": ones *
+                 pradmax, "q1": 1, "q2": 1, "b": p_init['b']}
         bounds = (p_low, p_upp)
-        print ("# optimizing radius ratios...")
+        print("# optimizing radius ratios...")
         for i in range(n_iter):
             res = solver.run(p_init, bounds=bounds)
             p_init, state = res
-            print (state)
-            print ()
+            print(state)
+            print()
 
         # optimize impact parameters
-        p_low = {"rstar": p_init['rstar'], "prad": p_init['prad'], "q1": 0, "q2": 0, "b": zeros}
-        p_upp = {"rstar": p_init['rstar'], "prad": p_init['prad'], "q1": 1, "q2": 1, "b": ones}
+        p_low = {"rstar": p_init['rstar'],
+                 "prad": p_init['prad'], "q1": 0, "q2": 0, "b": zeros}
+        p_upp = {"rstar": p_init['rstar'],
+                 "prad": p_init['prad'], "q1": 1, "q2": 1, "b": ones}
         bounds = (p_low, p_upp)
-        print ("# optimizing impact parameters...")
+        print("# optimizing impact parameters...")
         for i in range(n_iter):
             res = solver.run(p_init, bounds=bounds)
             p_init, state = res
-            print (state)
-            print ()
+            print(state)
+            print()
 
         # optimize all
         p_low = {"rstar": 0., "prad": zeros, "q1": 0, "q2": 0, "b": zeros}
-        p_upp = {"rstar": p_init['rstar']*2., "prad": ones*pradmax, "q1": 1, "q2": 1, "b": ones}
+        p_upp = {"rstar": p_init['rstar']*2.,
+                 "prad": ones*pradmax, "q1": 1, "q2": 1, "b": ones}
         bounds = (p_low, p_upp)
-        print ("# optimizing all parameters...")
+        print("# optimizing all parameters...")
         for i in range(n_iter):
             res = solver.run(p_init, bounds=bounds)
             p_init, state = res
-            print (state)
-            print ()
+            print(state)
+            print()
 
         return p_init
 
@@ -246,11 +264,13 @@ def b_to_cosi(b, period, ecosw, esinw, rstar, mstar=1.):
             cosine of inclination
 
     """
-    a_over_r = 4.2083 * period**(2./3.) / rstar * mstar**(1./3.) # adopting G, M_sun, R_sun from astropy.constants
+    a_over_r = 4.2083 * period**(2./3.) / rstar * mstar**(1. /
+                                                          3.)  # adopting G, M_sun, R_sun from astropy.constants
     efactor = (1. - ecosw**2 - esinw**2) / (1. + esinw)
     return b / a_over_r / efactor
 
-#%%
+
+# %%
 """
 import pandas as pd
 d = pd.read_csv("/Users/k_masuda/Dropbox/repos/jnkepler/examples/kep51/ttv.txt", delim_whitespace=True, header=None, names=['tnum', 'tc', 'tcerr', 'dnum', 'planum'])
