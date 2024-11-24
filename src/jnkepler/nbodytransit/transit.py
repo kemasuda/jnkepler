@@ -1,11 +1,13 @@
 """ routines to compute transit light curves
 """
-__all__ = ["get_xvast_map", "compute_nbody_flux", "compute_nbody_flux_nooverlap"]
+__all__ = ["get_xvast_map", "compute_nbody_flux",
+           "compute_nbody_flux_nooverlap"]
 
 import jax.numpy as jnp
 from jax import vmap
-from exoplanet_core.jax import ops
+from jaxoplanet.core.limb_dark import light_curve
 rsun_au = 0.00465047
+
 
 def get_xvast_map(xcm, vcm, pidxarr):
     """ astrocentric positions and velocities at transit centers
@@ -20,8 +22,8 @@ def get_xvast_map(xcm, vcm, pidxarr):
 
     """
     def xvast_orbit(xcm, vcm, j):
-        return xcm[j,:2] - xcm[0,:2], vcm[j,:2] - vcm[0,:2]
-    xvast_map = vmap(xvast_orbit, (0,0,0), (0))
+        return xcm[j, :2] - xcm[0, :2], vcm[j, :2] - vcm[0, :2]
+    xvast_map = vmap(xvast_orbit, (0, 0, 0), (0))
     return xvast_map(xcm, vcm, pidxarr)
 
 
@@ -37,10 +39,7 @@ def compute_relative_flux_loss(barr, rarr, u1, u2):
             relative flux loss
 
     """
-    soln = ops.quad_solution_vector(barr, rarr)
-    g = jnp.array([1.-u1-1.5*u2, u1+2*u2, -0.25*u2])
-    I0 = jnp.pi * (g[0] + 2 * g[1] / 3.)
-    return jnp.dot(soln, g) / I0 - 1.
+    return light_curve([u1, u2], barr, rarr)
 
 
 def compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, times, times_transit_idx, times_planet_idx):
@@ -63,7 +62,8 @@ def compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, times, times_t
             relative flux loss
 
     """
-    xsky_au = xsky_tc[times_transit_idx] + vsky_tc[times_transit_idx] * (times - tc[times_transit_idx])[:,:,None]
+    xsky_au = xsky_tc[times_transit_idx] + vsky_tc[times_transit_idx] * \
+        (times - tc[times_transit_idx])[:, :, None]
     barr_au = jnp.sqrt(jnp.sum(xsky_au**2, axis=2))
     barr = barr_au / (rsun_au * rstar)
     rarr = prad[times_planet_idx]
@@ -89,7 +89,8 @@ def compute_nbody_flux_nooverlap(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, time
             relative flux loss
 
     """
-    xsky_au = xsky_tc[times_transit_idx] + vsky_tc[times_transit_idx] * (times - tc[times_transit_idx])[:,None]
+    xsky_au = xsky_tc[times_transit_idx] + vsky_tc[times_transit_idx] * \
+        (times - tc[times_transit_idx])[:, None]
     barr_au = jnp.sqrt(jnp.sum(xsky_au**2, axis=1))
     barr = barr_au / (rsun_au * rstar)
     rarr = prad[times_planet_idx]
