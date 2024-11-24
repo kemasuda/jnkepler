@@ -56,7 +56,12 @@ def get_planets_smass(pdic, num_planets):
             stellar mass (solar unit)
 
     """
-    import ttvfast
+    try:
+        import ttvfast
+    except ImportError:
+        raise ImportError(
+            "The ttvfast package https://github.com/mindriot101/ttvfast-python.git is required for this utility function."
+        )
     planets = []
     for i in range(num_planets):
         pltag = "%d" % i
@@ -91,7 +96,12 @@ def get_ttvfast_model_rv(pdic, num_planets, t_start, dt, t_end, times_rv, skip_p
             array of RVs
 
     """
-    import ttvfast
+    try:
+        import ttvfast
+    except ImportError:
+        raise ImportError(
+            "The ttvfast package https://github.com/mindriot101/ttvfast-python.git is required for this utility function."
+        )
     planets, smass = get_planets_smass(pdic, num_planets)
     ttvfast_results = ttvfast.ttvfast(
         planets, smass, t_start, dt, t_end, rv_times=list(times_rv))
@@ -128,7 +138,12 @@ def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end, skip_planet_idx=[])
             list of transit times
 
     """
-    import ttvfast
+    try:
+        import ttvfast
+    except ImportError:
+        raise ImportError(
+            "The ttvfast package https://github.com/mindriot101/ttvfast-python.git is required for this utility function."
+        )
     planets, smass = get_planets_smass(pdic, num_planets)
     ttvfast_results = ttvfast.ttvfast(planets, smass, t_start, dt, t_end)
 
@@ -166,7 +181,12 @@ def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end, skip_planet_idx
             list of sky-plane velocities (au/day)
 
     """
-    import ttvfast
+    try:
+        import ttvfast
+    except ImportError:
+        raise ImportError(
+            "The ttvfast package https://github.com/mindriot101/ttvfast-python.git is required for this utility function."
+        )
     planets, smass = get_planets_smass(pdic, num_planets)
     ttvfast_results = ttvfast.ttvfast(planets, smass, t_start, dt, t_end)
 
