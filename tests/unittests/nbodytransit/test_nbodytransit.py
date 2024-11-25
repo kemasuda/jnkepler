@@ -31,11 +31,11 @@ def compute_testlc():
     nt = NbodyTransit(t_start, t_end, dt, tcobs, p_init,
                       errorobs=errorobs, print_info=False)
     nt.set_lcobs(times_lc)
-    lc, ttv = nt.get_lc(par_dict, rstar, prad, u1, u2)
+    lc, ttv = nt.get_flux(par_dict, rstar, prad, u1, u2)
     np.savetxt(path/"kep51_lc_model.txt", lc)
 
 
-def test_get_lc():
+def test_get_flux():
     d = pd.read_csv(path/"kep51_ttv_photodtest.txt", sep="\s+",
                     header=None, names=['tnum', 'tc', 'tcerr', 'dnum', 'planum'])
     tcobs = [jnp.array(d.tc[d.planum == j+1]) for j in range(3)]
@@ -55,7 +55,7 @@ def test_get_lc():
     nt = NbodyTransit(t_start, t_end, dt, tcobs, p_init,
                       errorobs=errorobs, print_info=False)
     nt.set_lcobs(times_lc)
-    lc, ttv = nt.get_lc(par_dict)
+    lc, ttv = nt.get_flux(par_dict)
 
     lc_test = np.loadtxt(path/"kep51_lc_model.txt")
 
@@ -63,7 +63,7 @@ def test_get_lc():
     print("# max fractional difference:", np.max(np.abs(lc-lc_test)))
 
 
-def test_get_lc_and_rv():
+def test_get_flux_and_rv():
     jttv, _, _, _ = read_testdata_tc()
     elements = np.loadtxt(path/"tcbug_elements.txt")
     masses = np.loadtxt(path/"tcbug_masses.txt")
@@ -77,7 +77,7 @@ def test_get_lc_and_rv():
     nt = NbodyTransit(jttv.t_start, jttv.t_end, jttv.dt, jttv.tcobs, jttv.p_init,
                       errorobs=jttv.errorobs, print_info=False)
     nt.set_lcobs(times_lc)
-    _, _, rv = nt.get_lc_and_rv(par_dict, times_rv)
+    _, _, rv = nt.get_flux_and_rv(par_dict, times_rv)
 
     rv_test = np.loadtxt(path/"rvs_ttvfast_for_test-ttandrv.txt")
 
@@ -86,5 +86,5 @@ def test_get_lc_and_rv():
 
 if __name__ == '__main__':
     # compute_testlc()
-    test_get_lc()
-    test_get_lc_and_rv()
+    test_get_flux()
+    test_get_flux_and_rv()

@@ -37,8 +37,8 @@ def test_overlap():
                          errorobs=errorobs, print_info=False)
     nt_ol.set_lcobs(times_lc, overlapping_transit=True)
 
-    lc_nool = nt.get_lc(pdic)[0]
-    lc_ol = nt_ol.get_lc(pdic)[0]
+    lc_nool = nt.get_flux(pdic)[0]
+    lc_ol = nt_ol.get_flux(pdic)[0]
 
     assert lc_ol == pytest.approx(lc_nool)
 

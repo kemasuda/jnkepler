@@ -93,7 +93,7 @@ class NbodyTransit(JaxTTV):
         return tc, xsky_tc, vsky_tc, times, xvjac, masses
 
     @partial(jit, static_argnums=(0,))
-    def get_lc(self, par_dict):
+    def get_flux(self, par_dict):
         """compute nbody flux
 
             Args:
@@ -123,7 +123,7 @@ class NbodyTransit(JaxTTV):
         return nbodyflux, tc
 
     @partial(jit, static_argnums=(0,))
-    def get_lc_and_rv(self, par_dict, times_rv):
+    def get_flux_and_rv(self, par_dict, times_rv):
         """compute nbody flux and RV
 
             Args:
@@ -155,87 +155,6 @@ class NbodyTransit(JaxTTV):
         nbodyrv = rv_from_xvjac(times_rv, times, xvjac, masses)
 
         return nbodyflux, tc, nbodyrv
-
-    def optimize_transit_parameters(self, fluxes, errors, par_dict, rstar_init=1.,
-                                    method="TNC", n_iter=1, pradmax=0.2):
-        """optimize parameters relevant to light curves alone
-
-            Args:
-                fluxes: observed flux
-                errors: error of the fluxes
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
-                rstar_init: initial guess for stellar radius (in units of solar radius)
-                method: method for jaxopt.ScipyBoundedMinimize
-                n_iter: # of iterations in each optimization (unnecessary?)
-                pradmax: maximum planet-to-star radius ratio
-
-            Returns:
-                a set of optimal parameters
-
-        """
-        import jaxopt
-        npl = self.nplanet
-        zeros = np.zeros(npl)
-        ones = np.ones(npl)
-        p_init = {
-            "rstar": np.float64(rstar_init),
-            "prad": ones * 0.01,
-            "q1": np.float64(0.5),
-            "q2": np.float64(0.5),
-            "b": ones * 0.1,
-        }
-
-        def objective(p):
-            u1, u2 = q_to_u(p['q1'], p['q2'])
-            par_dict['cosi'] = b_to_cosi(
-                p['b'], par_dict['period'], par_dict['ecosw'], par_dict['esinw'], p['rstar'])
-            model = self.get_lc(par_dict, p['rstar'], p['prad'], u1, u2)[0]
-            return jnp.sum(((fluxes - model) / errors)**2)
-
-        solver = jaxopt.ScipyBoundedMinimize(fun=objective, method=method)
-        print("# initial objective function:", objective(p_init))
-        print()
-
-        # optimize radii
-        p_low = {"rstar": 0., "prad": zeros,
-                 "q1": 0, "q2": 0, "b": p_init['b']}
-        p_upp = {"rstar": p_init['rstar']*2, "prad": ones *
-                 pradmax, "q1": 1, "q2": 1, "b": p_init['b']}
-        bounds = (p_low, p_upp)
-        print("# optimizing radius ratios...")
-        for i in range(n_iter):
-            res = solver.run(p_init, bounds=bounds)
-            p_init, state = res
-            print(state)
-            print()
-
-        # optimize impact parameters
-        p_low = {"rstar": p_init['rstar'],
-                 "prad": p_init['prad'], "q1": 0, "q2": 0, "b": zeros}
-        p_upp = {"rstar": p_init['rstar'],
-                 "prad": p_init['prad'], "q1": 1, "q2": 1, "b": ones}
-        bounds = (p_low, p_upp)
-        print("# optimizing impact parameters...")
-        for i in range(n_iter):
-            res = solver.run(p_init, bounds=bounds)
-            p_init, state = res
-            print(state)
-            print()
-
-        # optimize all
-        p_low = {"rstar": 0., "prad": zeros, "q1": 0, "q2": 0, "b": zeros}
-        p_upp = {"rstar": p_init['rstar']*2.,
-                 "prad": ones*pradmax, "q1": 1, "q2": 1, "b": ones}
-        bounds = (p_low, p_upp)
-        print("# optimizing all parameters...")
-        for i in range(n_iter):
-            res = solver.run(p_init, bounds=bounds)
-            p_init, state = res
-            print(state)
-            print()
-
-        return p_init
 
 
 def initialize_transit_params(par_dict):
@@ -313,98 +232,3 @@ def b_to_cosi(b, period, ecosw, esinw, rstar, mstar=1.):
                                                           3.)  # adopting G, M_sun, R_sun from astropy.constants
     efactor = (1. - ecosw**2 - esinw**2) / (1. + esinw)
     return b / a_over_r / efactor
-
-
-# %%
-"""
-import pandas as pd
-d = pd.read_csv("/Users/k_masuda/Dropbox/repos/jnkepler/examples/kep51/ttv.txt", delim_whitespace=True, header=None, names=['tnum', 'tc', 'tcerr', 'dnum', 'planum'])
-tcobs = [jnp.array(d.tc[d.planum==j+1]) for j in range(3)]
-errorobs = [jnp.array(d.tcerr[d.planum==j+1]) for j in range(3)]
-p_init = [45.155305, 85.31646, 130.17809]
-
-#%%
-dt = 1.0
-t_start, t_end = 155., 2950.
-nt = NbodyTransit(t_start, t_end, dt)
-nt.set_tcobs(tcobs, p_init, errorobs=errorobs, print_info=True)
-
-#%%
-params_best = nt.optim(mmax=1e-4, emax=0.1)
-
-#%%
-elements, masses = params_to_elements(params_best, nt.nplanet)
-prad = jnp.array([0.08, 0.09, 0.1])
-rstar = 1.
-u1, u2 = 0.5, 0.2
-
-#%%
-data = pd.read_csv("lc.txt", delim_whitespace=True, header=None, names=['time', 'flux', 'flux_err', 'tranum', 'plnum'])
-df = data.sort_values("time").reset_index(drop=True)
-
-#%%
-times_lc = jnp.array(df.time)
-fluxes, errors = jnp.array(df.flux), jnp.array(df.flux_err)
-
-#%%
-nt.set_lcobs(times_lc, overlapping_transit=False, supersample_factor=-2.)
-
-#%%
-nt.supersample_num
-nt.times_super
-nt.times_lc
-nt.times_super
-
-#%%
-%timeit model = nt.get_lc(elements, masses, rstar, prad, u1, u2)
-
-#%%
-plt.figure(figsize=(14,6))
-plt.xlim(203.5, 205)
-plt.plot(nt.times_lc, model, '.')
-
-#%%
-plt.figure(figsize=(14,6))
-plt.xlim(203.5, 205)
-plt.plot(nt.times_lc, model, '.')
-
-#%%
-exposure_time = 29.4 / 1440.
-supersample_factor = 10
-dt = exposure_time / supersample_factor
-
-#%%
-dtarr = np.linspace(0, exposure_time, int(supersample_factor // 2 * 2 + 1))
-dtarr -= np.median(dtarr)
-
-#%%
-times_super = (times_lc[:,None] + dtarr).ravel()
-
-#%%
-nt.set_lcobs(times_super, overlapping_transit=False)
-
-#%%
-%timeit model = nt.get_lc(elements, masses, rstar, prad, u1, u2)
-
-#%%
-a = np.linspace(0, 10, 10)
-a
-a.reshape(-1, 5)
-
-#%%
-model_sum = jnp.mean(model.reshape(-1, len(dtarr)), axis=1)
-
-#%%
-plt.figure(figsize=(14,6))
-plt.xlim(203.5, 205)
-plt.plot(times_super, model, '.')
-plt.plot(times_lc, model_sum, 'o')
-plt.plot(times_lc, model_noss, 's')
-
-#%%
-nt.set_lcobs(times_lc, overlapping_transit=False)
-model_noss = nt.get_lc(elements, masses, rstar, prad, u1, u2)
-
-#%%
-plt.plot(nt.times_lc, model)
-"""
