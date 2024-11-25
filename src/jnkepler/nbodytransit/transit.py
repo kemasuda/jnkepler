@@ -5,7 +5,6 @@ __all__ = ["get_xvast_map", "compute_nbody_flux",
 
 import jax.numpy as jnp
 from jax import vmap
-from jaxoplanet.core.limb_dark import light_curve
 rsun_au = 0.00465047
 
 
@@ -39,6 +38,14 @@ def compute_relative_flux_loss(barr, rarr, u1, u2):
             relative flux loss
 
     """
+    try:
+        from jaxoplanet.core.limb_dark import light_curve
+    except ImportError:
+        raise ImportError(
+            "The 'jaxoplanet' package is required for using the NbodyTransit module. "
+            "Please install it using 'pip install jaxoplanet'. "
+            "For more details, visit https://jax.exoplanet.codes/en/latest/"
+        )
     return light_curve([u1, u2], barr, rarr)
 
 

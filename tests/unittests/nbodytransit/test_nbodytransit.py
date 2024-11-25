@@ -11,7 +11,7 @@ config.update('jax_enable_x64', True)
 
 path = importlib_resources.files('jnkepler').joinpath('data')
 
-
+"""
 def compute_testlc():
     d = pd.read_csv(path/"kep51_ttv_photodtest.txt", sep="\s+",
                     header=None, names=['tnum', 'tc', 'tcerr', 'dnum', 'planum'])
@@ -33,6 +33,7 @@ def compute_testlc():
     nt.set_lcobs(times_lc)
     lc, ttv = nt.get_flux(par_dict, rstar, prad, u1, u2)
     np.savetxt(path/"kep51_lc_model.txt", lc)
+"""
 
 
 def test_get_flux():

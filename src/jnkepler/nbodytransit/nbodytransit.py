@@ -1,5 +1,4 @@
-from ..jaxttv.rv import *
-from .transit import *
+
 __all__ = ["NbodyTransit", "q_to_u", "b_to_cosi"]
 
 import numpy as np
@@ -12,6 +11,8 @@ from ..jaxttv.conversion import *
 from ..jaxttv.findtransit import *
 from ..jaxttv.symplectic import integrate_xv, kepler_step_map
 from ..jaxttv.hermite4 import integrate_xv as integrate_xv_hermite4
+from ..jaxttv.rv import *
+from .transit import *
 from jax import jit, grad, config
 config.update('jax_enable_x64', True)
 
