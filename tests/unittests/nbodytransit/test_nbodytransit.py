@@ -52,6 +52,7 @@ def test_get_flux():
     par_dict["srad"], par_dict["u1"], par_dict["u2"] = 1., 0.5, 0.2
     par_dict["radius_ratio"] = jnp.array([0.07, 0.05, 0.1])
     par_dict["smass"] = 1.
+    print(par_dict)
 
     nt = NbodyTransit(t_start, t_end, dt, tcobs, p_init,
                       errorobs=errorobs, print_info=False)

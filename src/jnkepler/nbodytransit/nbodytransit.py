@@ -108,15 +108,15 @@ class NbodyTransit(JaxTTV):
                 tc: transit times (1D flattened array)
 
         """
-        tc, xsky_tc, vsky_tc, _, _, _ = self.get_xvsky_tc(par_dict)
-        rstar, prad, u1, u2 = initialize_transit_params(par_dict)
+        _par_dict = initialize_transit_params(par_dict)
+        tc, xsky_tc, vsky_tc, _, _, _ = self.get_xvsky_tc(_par_dict)
 
         if self.overlapping_transit:
-            nbodyflux_ss = compute_nbody_flux(
-                rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
+            nbodyflux_ss = compute_nbody_flux(_par_dict["srad"], _par_dict["radius_ratio"], _par_dict["u1"], _par_dict["u2"],
+                                              tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
         else:
-            nbodyflux_ss = compute_nbody_flux_nooverlap(
-                rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx_nool, self.times_planet_idx_nool)
+            nbodyflux_ss = compute_nbody_flux_nooverlap(_par_dict["srad"], _par_dict["radius_ratio"], _par_dict["u1"], _par_dict["u2"],
+                                                        tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx_nool, self.times_planet_idx_nool)
 
         nbodyflux = jnp.mean(
             nbodyflux_ss.reshape(-1, self.supersample_num), axis=1)
@@ -140,16 +140,16 @@ class NbodyTransit(JaxTTV):
                 nbodyrv: stellar RVs at times_rvs (m/s), positive when the star is moving away
 
         """
+        _par_dict = initialize_transit_params(par_dict)
         tc, xsky_tc, vsky_tc, times, xvjac, masses = self.get_xvsky_tc(
-            par_dict)
-        rstar, prad, u1, u2 = initialize_transit_params(par_dict)
+            _par_dict)
 
         if self.overlapping_transit:
-            nbodyflux_ss = compute_nbody_flux(
-                rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
+            nbodyflux_ss = compute_nbody_flux(_par_dict["srad"], _par_dict["radius_ratio"], _par_dict["u1"], _par_dict["u2"],
+                                              tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx, self.times_planet_idx)
         else:
-            nbodyflux_ss = compute_nbody_flux_nooverlap(
-                rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx_nool, self.times_planet_idx_nool)
+            nbodyflux_ss = compute_nbody_flux_nooverlap(_par_dict["srad"], _par_dict["radius_ratio"], _par_dict["u1"], _par_dict["u2"],
+                                                        tc, xsky_tc, vsky_tc, self.times_super, self.times_transit_idx_nool, self.times_planet_idx_nool)
 
         nbodyflux = jnp.mean(
             nbodyflux_ss.reshape(-1, self.supersample_num), axis=1)
@@ -158,7 +158,7 @@ class NbodyTransit(JaxTTV):
         return nbodyflux, tc, nbodyrv
 
 
-def initialize_transit_params(par_dict):
+def initialize_transit_params(par_dict_):
     """initialize transit parameters
 
         Args:
@@ -170,32 +170,44 @@ def initialize_transit_params(par_dict):
             coefficients for quadratic limb-darkening law
 
     """
-    keys = par_dict.keys()
+    keys = par_dict_.keys()
+    par_dict = par_dict_.copy()
 
     if "smass" in keys and "srad" in keys:
-        srad = par_dict["srad"]
+        pass
     elif "sdens" in keys:
-        smass = par_dict["smass"] if "smass" in keys else 1.
-        srad = (smass / par_dict["sdens"])**(1./3.)
+        par_dict["smass"] = par_dict_["smass"] if "smass" in keys else 1.
+        par_dict["srad"] = (par_dict["smass"] / par_dict_["sdens"])**(1./3.)
     else:
         raise ValueError(
-            "Either (smass, srad) (stellar mass/radius in solar unit) or sdens (stellar mean density in solar unit) needs to be provided.")
+            "Either (smass, srad) (stellar mass/radius in solar unit) or sdens (stellar mean density in solar unit) needs to be provided."
+        )
 
     if "q1" in keys and "q2" in keys:
-        u1, u2 = q_to_u(par_dict["q1"], par_dict["q2"])
+        par_dict["u1"], par_dict["u2"] = q_to_u(
+            par_dict_["q1"], par_dict_["q2"])
     elif "u1" in keys and "u2" in keys:
-        u1, u2 = par_dict["u1"], par_dict["u2"]
+        pass
     else:
         raise ValueError(
-            "Either (q1, q2) or (u1, u2) needs to be provided for quadratic limb-darkening.")
+            "Either (q1, q2) or (u1, u2) needs to be provided for quadratic limb-darkening."
+        )
 
-    if "radius_ratio" in keys:
-        prad = par_dict["radius_ratio"]
-    else:
+    if not "radius_ratio" in keys:
         raise ValueError(
             "radius_ratio needs to be provided for planet-to-star radius ratios.")
 
-    return srad, prad, u1, u2
+    if "b" in keys:
+        par_dict["cosi"] = b_to_cosi(par_dict_["b"], par_dict_["period"], par_dict_[
+                                     "ecosw"], par_dict_["esinw"], par_dict_["srad"], par_dict_["smass"])
+    elif "cosi" in keys:
+        pass
+    else:
+        raise ValueError(
+            "Either b or cosi needs to be provided to specify orbital inclinations."
+        )
+
+    return par_dict
 
 
 def q_to_u(q1, q2):
@@ -214,7 +226,7 @@ def q_to_u(q1, q2):
     return u1, u2
 
 
-def b_to_cosi(b, period, ecosw, esinw, rstar, mstar=1.):
+def b_to_cosi(b, period, ecosw, esinw, rstar, mstar):
     """convert b into cosi following Eq.7 of Winn (2010), arXiv:1001.2010
 
         Args:
@@ -229,7 +241,7 @@ def b_to_cosi(b, period, ecosw, esinw, rstar, mstar=1.):
             cosine of inclination
 
     """
-    a_over_r = 4.2083 * period**(2./3.) / rstar * mstar**(1. /
-                                                          3.)  # adopting G, M_sun, R_sun from astropy.constants
+    # adopting G, M_sun, R_sun from astropy.constants
+    a_over_r = 4.2083 * period**(2./3.) / rstar * mstar**(1./3.)
     efactor = (1. - ecosw**2 - esinw**2) / (1. + esinw)
     return b / a_over_r / efactor
