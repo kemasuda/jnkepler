@@ -17,10 +17,14 @@ config.update('jax_enable_x64', True)
 
 
 class NbodyTransit(JaxTTV):
-    """ main class for photodynamical analysis """
+    """main class for photodynamical analysis
+
+        Unlike in JaxTTV class, non-transiting objects are not yet supported.
+
+    """
 
     def set_lcobs(self, times_lc, overlapping_transit=False, exposure_time=29.4/1440., supersample_factor=10, print_info=True):
-        """ initialization
+        """initialization
 
             Args:
                 times_lc: times in the light curve
@@ -65,7 +69,7 @@ class NbodyTransit(JaxTTV):
                 print("# overlapping transit ignored.".ljust(35))
 
     def get_xvsky_tc(self, par_dict):
-        """ compute sky-plane positions and velocities at transit centers
+        """compute sky-plane positions and velocities at transit centers
 
             Args:
                 elements: orbital elements in JaxTTV format
@@ -86,25 +90,25 @@ class NbodyTransit(JaxTTV):
         tc, (xcm, vcm, _) = find_transit_params_all(
             pidxarr-1, tcobs1d, times, xvjac, masses)
         xsky_tc, vsky_tc = get_xvast_map(xcm, vcm, pidxarr)
-        return tc, xsky_tc, vsky_tc
+        return tc, xsky_tc, vsky_tc, times, xvjac, masses
 
     @partial(jit, static_argnums=(0,))
-    def get_lc(self, par_dict, rstar, prad, u1, u2):
-        """ compute nbody flux
+    def get_lc(self, par_dict):
+        """compute nbody flux
 
             Args:
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
-                rstar: stellar radius (in units of solar radius)
-                prad: planet-to-star radius ratio (Norbit,)
-                u1, u2: quadratic limb-darkening coefficients
+                par_dict: dict of input parameters; TTV parameters + 
+                    srad: stellar radius (in units of solar radius)
+                    radius_ratio: planet-to-star radius ratio (Norbit,)
+                    u1, u2: quadratic limb-darkening coefficients
 
             Returns:
                 nbodyflux: transit light curve (len(times_lc),)
                 tc: transit times (1D flattened array)
 
         """
-        tc, xsky_tc, vsky_tc = self.get_xvsky_tc(par_dict)
+        tc, xsky_tc, vsky_tc, _, _, _ = self.get_xvsky_tc(par_dict)
+        rstar, prad, u1, u2 = initialize_transit_params(par_dict)
 
         if self.overlapping_transit:
             nbodyflux_ss = compute_nbody_flux(
@@ -119,16 +123,15 @@ class NbodyTransit(JaxTTV):
         return nbodyflux, tc
 
     @partial(jit, static_argnums=(0,))
-    def get_lc_and_rv(self, times_rv, par_dict, rstar, prad, u1, u2):
-        """ compute nbody flux and RV
+    def get_lc_and_rv(self, par_dict, times_rv):
+        """compute nbody flux and RV
 
             Args:
+                par_dict: dict of input parameters; TTV parameters + 
+                    srad: stellar radius (in units of solar radius)
+                    radius_ratio: planet-to-star radius ratio (Norbit,)
+                    u1, u2: quadratic limb-darkening coefficients
                 times_rv: times at which RVs are evaluated
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
-                rstar: stellar radius (in units of solar radius)
-                prad: planet-to-star radius ratio (Norbit,)
-                u1, u2: quadratic limb-darkening coefficients
 
             Returns:
                 nbodyflux: transit light curve (len(times_lc),)
@@ -136,7 +139,9 @@ class NbodyTransit(JaxTTV):
                 nbodyrv: stellar RVs at times_rvs (m/s), positive when the star is moving away
 
         """
-        tc, xsky_tc, vsky_tc = self.get_xvsky_tc(par_dict)
+        tc, xsky_tc, vsky_tc, times, xvjac, masses = self.get_xvsky_tc(
+            par_dict)
+        rstar, prad, u1, u2 = initialize_transit_params(par_dict)
 
         if self.overlapping_transit:
             nbodyflux_ss = compute_nbody_flux(
@@ -153,7 +158,7 @@ class NbodyTransit(JaxTTV):
 
     def optimize_transit_parameters(self, fluxes, errors, par_dict, rstar_init=1.,
                                     method="TNC", n_iter=1, pradmax=0.2):
-        """ optimize parameters relevant to light curves alone
+        """optimize parameters relevant to light curves alone
 
             Args:
                 fluxes: observed flux
@@ -233,8 +238,48 @@ class NbodyTransit(JaxTTV):
         return p_init
 
 
+def initialize_transit_params(par_dict):
+    """initialize transit parameters
+
+        Args:
+            par_dict
+
+        Returns:
+            stellar radius (solar unit); stellar mass = 1 assumed if only density is specified in par_dict
+            radius ratio
+            coefficients for quadratic limb-darkening law
+
+    """
+    keys = par_dict.keys()
+
+    if "smass" in keys and "srad" in keys:
+        srad = par_dict["srad"]
+    elif "sdens" in keys:
+        smass = par_dict["smass"] if "smass" in keys else 1.
+        srad = (smass / par_dict["sdens"])**(1./3.)
+    else:
+        raise ValueError(
+            "Either (smass, srad) (stellar mass/radius in solar unit) or sdens (stellar mean density in solar unit) needs to be provided.")
+
+    if "q1" in keys and "q2" in keys:
+        u1, u2 = q_to_u(par_dict["q1"], par_dict["q2"])
+    elif "u1" in keys and "u2" in keys:
+        u1, u2 = par_dict["u1"], par_dict["u2"]
+    else:
+        raise ValueError(
+            "Either (q1, q2) or (u1, u2) needs to be provided for quadratic limb-darkening.")
+
+    if "radius_ratio" in keys:
+        prad = par_dict["radius_ratio"]
+    else:
+        raise ValueError(
+            "radius_ratio needs to be provided for planet-to-star radius ratios.")
+
+    return srad, prad, u1, u2
+
+
 def q_to_u(q1, q2):
-    """ convert q1, q2 into u1, u2
+    """convert q1, q2 into u1, u2
 
         Args:
             q1, q2: quadratic limb-darkening coefficients as parameterized in Kipping, D. M. 2013, MNRAS, 435, 2152
@@ -250,7 +295,7 @@ def q_to_u(q1, q2):
 
 
 def b_to_cosi(b, period, ecosw, esinw, rstar, mstar=1.):
-    """ convert b into cosi following Eq.7 of Winn (2010), arXiv:1001.2010
+    """convert b into cosi following Eq.7 of Winn (2010), arXiv:1001.2010
 
         Args:
             b: impact parameter (normalized to stellar radius)
