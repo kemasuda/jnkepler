@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 
-def optim_svi(numpyro_model, step_size, num_steps, p_initial=None):
+def optim_svi(numpyro_model, step_size, num_steps, p_initial=None, **kwargs):
     """optimization using Stochastic Variational Inference (SVI)
 
         Args:
@@ -37,7 +37,7 @@ def optim_svi(numpyro_model, step_size, num_steps, p_initial=None):
             numpyro_model, init_loc_fn=init_to_value(values=p_initial))
 
     # SVI object
-    svi = SVI(numpyro_model, guide, optimizer, loss=Trace_ELBO())
+    svi = SVI(numpyro_model, guide, optimizer, loss=Trace_ELBO(), **kwargs)
 
     # run the optimizer and get the posterior median
     svi_result = svi.run(random.PRNGKey(0), num_steps)
