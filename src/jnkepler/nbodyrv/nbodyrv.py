@@ -28,8 +28,7 @@ class NbodyRV(Nbody):
 
             Args:
                 times_rv: times at which RVs are evaluated
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (Nbody,), solar unit
+                par_dict: dictionary of input parameters (same as TTVs)
 
             Returns:
                 stellar RVs at times_rvs (m/s), positive when the star is moving away
