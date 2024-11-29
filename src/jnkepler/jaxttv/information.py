@@ -1,6 +1,6 @@
 
-__all__ = ["information", "scale_information",
-           "observed_information", "hessian", "information_numpyrox"]
+__all__ = ["information", "scale_information"]
+# "observed_information", "hessian", "information_numpyrox"] # experimental
 
 import jax.numpy as jnp
 from jax import jacfwd, jacrev
@@ -88,7 +88,7 @@ def information_numpyrox(numpyro_model, pdic, **kwargs):
 def scale_information(matrix, param_bounds, keys):
     """get information matrix for scaled parameters
 
-    This will be deprecated; information with param_bounds does the same.
+    This will be deprecated; function 'information' above with param_bounds argument does the same.
 
         Args:
             matrix: information matrix
@@ -130,7 +130,8 @@ def negative_log_likelihood(jttv, pdic, lnmass=False):
 
 def observed_information(jttv, pdic, keys):
     """compute observed Fisher information matrix (a.k.a. Hessian) for iid gaussian likelihood
-    returns the same as hessian for keys=['ecosw', 'esinw', 'mass', 'period', 'tic'].
+
+    This returns the same matrix as 'hessian' function below for keys=['ecosw', 'esinw', 'mass', 'period', 'tic']
 
         Args:
             jttv: JaxTTV object
@@ -162,8 +163,10 @@ def observed_information(jttv, pdic, keys):
 
 
 def hessian(self, pdic):
-    """compute hessian for iid gaussian likelihood; CURRENTLY WORKS ONLY FOR ['ecosw', 'esinw', 'mass', 'period', 'tic']
-    for these keys, this function returns the same matirx as observed_hessian but is faster
+    """compute hessian for iid gaussian likelihood; 
+
+    CURRENTLY WORKS ONLY FOR ['ecosw', 'esinw', 'mass', 'period', 'tic']
+    For these keys, this function returns the same matirx as 'observed_hessian' function above, but sis faster
 
         Args:
             pdic: parameter dictionary
