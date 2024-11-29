@@ -11,7 +11,7 @@ META_PATH = os.path.join("src", "jnkepler", "__init__.py")
 CLASSIFIERS = [
     "Programming Language :: Python",
 ]
-INSTALL_REQUIRES = ["jax", "numpyro", "pandas",
+INSTALL_REQUIRES = ["jax", "numpyro", "pandas", "numpy<0.2",
                     "matplotlib", "importlib_resources"]
 
 
