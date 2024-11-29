@@ -4,6 +4,7 @@ __all__ = ["NbodyTransit", "q_to_u", "b_to_cosi"]
 import numpy as np
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
+import warnings
 from functools import partial
 from ..jaxttv import JaxTTV
 from ..jaxttv.utils import *
@@ -67,7 +68,8 @@ class NbodyTransit(JaxTTV):
             print("# supersampling factor:".ljust(35) + "%d" %
                   (self.supersample_num-1))
             if not self.overlapping_transit:
-                print("# overlapping transit ignored.".ljust(35))
+                warnings.warn(
+                    "set overlapping_transit to True if overlapping transits are present in the data.")
 
     def get_xvsky_tc(self, par_dict):
         """compute sky-plane positions and velocities at transit centers
