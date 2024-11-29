@@ -10,7 +10,14 @@ config.update('jax_enable_x64', True)
 
 path = importlib_resources.files('jnkepler').joinpath('data')
 
+try:
+    import jaxoplanet
+    JAXOPLANET_INSTALLED = True
+except ImportError:
+    JAXOPLANET_INSTALLED = False
 
+
+@pytest.mark.skipif(not JAXOPLANET_INSTALLED, reason="jaxoplanet is not installed")
 def test_overlap():
     d = pd.read_csv(path/"kep51_ttv_photodtest.txt", sep='\s+',
                     header=None, names=['tnum', 'tc', 'tcerr', 'dnum', 'planum'])

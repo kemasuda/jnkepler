@@ -11,6 +11,12 @@ config.update('jax_enable_x64', True)
 
 path = importlib_resources.files('jnkepler').joinpath('data')
 
+try:
+    import jaxoplanet
+    JAXOPLANET_INSTALLED = True
+except ImportError:
+    JAXOPLANET_INSTALLED = False
+
 """
 def compute_testlc():
     d = pd.read_csv(path/"kep51_ttv_photodtest.txt", sep="\s+",
@@ -36,6 +42,7 @@ def compute_testlc():
 """
 
 
+@pytest.mark.skipif(not JAXOPLANET_INSTALLED, reason="jaxoplanet is not installed")
 def test_get_flux():
     d = pd.read_csv(path/"kep51_ttv_photodtest.txt", sep="\s+",
                     header=None, names=['tnum', 'tc', 'tcerr', 'dnum', 'planum'])
@@ -65,6 +72,7 @@ def test_get_flux():
     print("# max fractional difference:", np.max(np.abs(lc-lc_test)))
 
 
+@pytest.mark.skipif(not JAXOPLANET_INSTALLED, reason="jaxoplanet is not installed")
 def test_get_flux_and_rv():
     jttv, _, _, _ = read_testdata_tc()
     elements = np.loadtxt(path/"tcbug_elements.txt")
