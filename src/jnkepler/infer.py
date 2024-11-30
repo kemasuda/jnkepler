@@ -24,7 +24,7 @@ def optim_svi(numpyro_model, step_size, num_steps, p_initial=None, **kwargs):
             p_initial: initial parameter set (dict); if None, use init_to_sample to initialize
 
         Returns:
-            p_fit: optimized parameter set
+            dict: dict containing optimized parameters
 
     """
     optimizer = numpyro.optim.Adam(step_size=step_size)
@@ -56,7 +56,7 @@ def fit_t_distribution(y, plot=True, fit_mean=False):
             fit_mean: if True, mean of the distribution is also fitted
 
         Returns: 
-            dictionary with the following keys:
+            dict: dictionary with the following keys
                 - lndf_loc: mean of log(dof)
                 - lndf_scale: std of log(dof)
                 - lnvar_loc: mean of log(variance)
@@ -117,14 +117,11 @@ def fit_t_distribution(y, plot=True, fit_mean=False):
                    label='normal, $\mathrm{SD}=1$')
         ax[1].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).pdf(x0),
                    label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)' % (lndf, lnvar, mean))
-        # ax[1].legend(loc='upper right', bbox_to_anchor=(1.5,1))
 
-        # ax[0].hist(y, bins=len(y), histtype='step', lw=3, alpha=0.6, density=True, cumulative=True, color='red')
         ysum = np.ones_like(y)
         hist, edge = np.histogram(y, bins=len(y))
         ax[0].plot(np.r_[x0[0], edge[0], edge[:-1], edge[-1], x0[-1]],
                    np.r_[0, 0, np.cumsum(hist)/len(y), 1, 1], lw=3, alpha=0.6, color='gray')
-        # ax[0].plot(np.sort(y), np.cumsum(ysum)/len(ysum), lw=3, alpha=0.6, color='gray')
         ax[0].plot(x0, norm(loc=0, scale=sd).cdf(x0), lw=1, color='C0', ls='dashed',
                    label='normal, $\mathrm{SD}=%.2f$' % sd)
         ax[0].plot(x0, norm.cdf(x0), lw=1, color='C0', ls='dotted',
