@@ -52,8 +52,9 @@ def kepler_step(x, v, gm, dt, nitr=3):
             nitr: number of iterations (currently needs to be fixed)
 
         Returns:
-            new positions (Norbit, xyz)
-            new velocities (Norbit, xyz)
+            tuple:
+                - new positions (Norbit, xyz)
+                - new velocities (Norbit, xyz)
 
     """
     r0 = jnp.sqrt(jnp.sum(x*x, axis=1))
@@ -145,8 +146,9 @@ def nbody_kicks(x, v, ki, masses, dt):
             dt: time step
 
         Returns:
-            positions
-            kicked velocities
+            tuple:
+                - positions
+                - kicked velocities
 
     """
     dv = -ki[:, None] * dt * Hintgrad(x, v, masses)
@@ -163,8 +165,9 @@ def integrate_xv(x, v, masses, times, nitr=3):
             times: cumulative sum of time steps
 
         Returns:
-            times (initial time omitted; dt/2 ahead of the input)
-            Jacobi position/velocity array (Nstep, x or v, Norbit, xyz)
+            tuple:
+                - times (initial time omitted; dt/2 ahead of the input)
+                - Jacobi position/velocity array (Nstep, x or v, Norbit, xyz)
 
     """
     ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / \

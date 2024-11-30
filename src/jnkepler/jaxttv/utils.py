@@ -72,8 +72,10 @@ def initialize_jacobi_xv(par_dict, t_epoch):
             t_epoch: epoch at which elements are defined
 
         Returns:
-            xjac, vjac: Jacobi positions and velocities at t_epoch (Norbit, xyz)
-            masses: 1D array of stellar and planetary masses (Nplanet+1,)
+            tuple:
+                - Jacobi positions at t_epoch (Norbit, xyz)
+                - Jacobi velocities at t_epoch (Norbit, xyz)
+                - masses: 1D array of stellar and planetary masses (Nbody,)
 
     """
     keys = par_dict.keys()
@@ -249,8 +251,9 @@ def params_to_elements(params, npl):
             npl: number of orbits (planets)
 
         Returns:
-            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
-            masses: ln(masses) of the bodies (Nbody,)
+            tuple:
+                - Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
+                - ln(masses) of the bodies (Nbody,)
 
     """
     elements = jnp.array(params[:-npl].reshape(npl, -1))
@@ -267,9 +270,9 @@ def convert_elements(par_dict, t_epoch, WHsplit=False):
             WHsplit: elements are converted to coordinates assuming Wisdom-Holman splitting. This should be True when the output is used for TTVFast.
 
         Returns:
-            (semi-major axis, period, eccentricity, inclination, argument of periastron, longitude of ascending node, mean anomaly) x (orbits)
-
-            angles are in radians
+            tuple:
+                 - array: (semi-major axis, period, eccentricity, inclination, argument of periastron, longitude of ascending node, mean anomaly) x (orbits), angles are in radians
+                 - mass array
 
     """
     xjac, vjac, masses = initialize_jacobi_xv(par_dict, t_epoch)

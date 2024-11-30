@@ -149,7 +149,9 @@ class JaxTTV(Nbody):
         """(Re)derive linear ephemeris when necessary
 
             Returns:
-                array of t0, array of P from linear fitting
+                tuple:
+                    - array of t0 from linear fitting
+                    - array of P from linear fitting
 
         """
         p_new, t0_new = [], []
@@ -181,7 +183,7 @@ class JaxTTV(Nbody):
                 transit_orbit_idx: array of idx of the planet (orbit) for each transit times should be evaulated, starting from 0. This must be specified when non-transiting planets exist. If None, all the planets are assuming to be transiting. This is the same as setting transit_orbit_idx = jnp.arange(nplanet).
 
             Returns:
-                tuple containing:
+                tuple:
                     - 1D array: flattened array of transit times
                     - float: fractional energy change
 
@@ -216,7 +218,7 @@ class JaxTTV(Nbody):
                 transit_orbit_idx: array of idx of the planet (orbit) for each transit times should be evaulated, starting from 0. This must be specified when non-transiting planets exist. If None, all the planets are assuming to be transiting. This is the same as setting transit_orbit_idx = jnp.arange(nplanet).
 
             Returns:
-                tuple containing:
+                tuple:
                     - 1D array: flattened array of transit times
                     - 1D array: stellar RVs (m/s)
                     - float: fractional energy change
@@ -253,9 +255,10 @@ class JaxTTV(Nbody):
                 t_end: end time of integration
 
             Returns:
-                pidxall: 1D array of orbit (planet) index starting from 1
-                tcall_linear: list of linear transit times between t_start and t_end
-                tcall_linear_flatten: 1D flattend version of tcall_linear
+                tuple:
+                    - 1D array of orbit (planet) index starting from 1
+                    - list of linear transit times between t_start and t_end
+                    - 1D flattend version of tcall_linear
 
         """
         tcall_linear = []
@@ -293,7 +296,7 @@ class JaxTTV(Nbody):
                 par_dict: dict containing parameters
 
             Returns:
-                tuple of 
+                tuple: 
                     - 1D flattened array of transit times
                     - fractional energy change
 
@@ -335,8 +338,7 @@ class JaxTTV(Nbody):
                 truncate: if True, only compute transit times up to the last observed time instead of t_end
 
             Returns:
-                tc_list: list of model transit times of length Nplanet
-                each element is an array of model transit times (length varies for each planet)
+                list: list of model transit times of length Nplanet; each element is an array of model transit times (length varies for each planet)
 
         """
         tc_flatten, _, orbit_idx = self.get_transit_times_all(
@@ -356,10 +358,9 @@ class JaxTTV(Nbody):
                 par_dict: dict containing parameters
 
             Returns:
-                dict with the following keys:
-                    - mean of reisudals
-                    - SD of residuals
-                params_st: parameters of Student's t dist (lndf, lnvar, mean)
+                tuple:
+                    - dictionary: mean of reisudals, SD of residuals
+                    - dictionary: parameters of Student's t dist (lndf, lnvar, mean)
 
         """
 
@@ -426,8 +427,9 @@ class JaxTTV(Nbody):
                 dtfrac: (innermost period) * dtfrac is used for the comparison integration
 
             Returns:
-                tc: model transit times from get_ttvs
-                tc2: model transit times using a smaller timestep
+                tuple:
+                    - model transit times from get_transit_times_obs
+                    - model transit times using a smaller timestep
 
         """
         tc, de = self.get_transit_times_obs(par_dict)

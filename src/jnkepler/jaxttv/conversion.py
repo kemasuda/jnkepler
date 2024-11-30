@@ -173,7 +173,7 @@ def jacobi_to_astrocentric(xjac, vjac, masses):
         Returns:
             tuple:
                 - astrocentric positions (Norbit, xyz)
-                - astrocentric positions (Norbit, xyz)
+                - astrocentric velocities (Norbit, xyz)
 
     """
     nbody = len(masses)

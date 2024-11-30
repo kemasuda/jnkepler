@@ -85,7 +85,7 @@ def get_tcflag(xjac, vjac):
             vjac: jacobi velocities (Nstep, Norbit, xyz)
 
         Returns:
-            tcflag: True if the time is just after the transit center (Nstep-1,)
+            array (bool): True if the time is just after the transit center (Nstep-1,)
 
     """
     g = jnp.sum(xjac[:, :, :2] * vjac[:, :, :2], axis=2)  # Nstep, Norbit
@@ -110,8 +110,7 @@ def find_tc_idx(t, tcflag, j, tcobs):
             tcobs: transit times for jth orbit (planet)
 
         Returns:
-            indices of times cloeset to transit centers (Nstep-1,)
-            should be put into times[1:], x[1:], etc.
+            array: indices of times cloeset to transit centers (Nstep-1,); should be put into times[1:], x[1:], etc.
 
     """
     tc_candidates = jnp.where(tcflag[:, j], t[1:], -jnp.inf)
@@ -255,9 +254,10 @@ def get_elements(x, v, gm):
             gm: 'GM' in Kepler's 3rd law
 
         Returns:
-            n: mean motion
-            ecosE0, esinE0: eccentricity and eccentric anomaly
-            a/r0: semi-major axis divided by |x|
+            tuple:
+                - n: mean motion
+                - ecosE0, esinE0: eccentricity and eccentric anomaly
+                - a/r0: semi-major axis divided by |x|
 
     """
     r0 = jnp.sqrt(jnp.sum(x*x, axis=1))

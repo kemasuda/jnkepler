@@ -19,7 +19,7 @@ def ttv_default_parameter_bounds(jttv, dtic=0.05, dp_frac=1e-2, emax=0.2, mmin=1
             jttv: JaxTTV object
 
         Returns:
-            dictionary of (lower bound array, upper bound array)
+            dict: dictionary of (lower bound array, upper bound array)
 
     """
     npl = jttv.nplanet
@@ -48,7 +48,7 @@ def scale_pdic(pdic, param_bounds):
             param_bounds: dictionary of (lower bound array, upper bound array)
 
         Returns:
-            dict of scaled parameters
+            dict: dictionary of scaled parameters
 
     """
     pdic_scaled = {}
@@ -66,7 +66,7 @@ def unscale_pdic(pdic_scaled, param_bounds):
             param_bounds: dictionary of (lower bound array, upper bound array)
 
         Returns:
-            dict of physical parameters in original scales
+            dict: dictionary of physical parameters in original scales
 
     """
     pdic = {}
@@ -87,7 +87,7 @@ def ttv_optim_curve_fit(jttv, param_bounds_, p_init=None, jac=False, plot=True, 
             jac: if True jacrev(model) is used
 
         Returns:
-            JaxTTV parameter dict
+            dict: JaxTTV parameter dictionary
 
     """
     npl = jttv.nplanet

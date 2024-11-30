@@ -52,8 +52,9 @@ def get_planets_smass(pdic, num_planets):
             num_planets: number of planets
 
         Returns:
-            list of ttvfast.models.Planet
-            stellar mass (solar unit)
+            tuple:
+                - list of ttvfast.models.Planet
+                - stellar mass (solar unit)
 
     """
     try:
@@ -91,9 +92,10 @@ def get_ttvfast_model_rv(pdic, num_planets, t_start, dt, t_end, times_rv, skip_p
             times_rv: times at which RVs are evaluated
 
         Returns:
-            list of transit epochs
-            list of transit times
-            array of RVs
+            tuple:
+                - list of transit epochs
+                - list of transit times
+                - array of RVs
 
     """
     try:
@@ -134,8 +136,9 @@ def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end, skip_planet_idx=[])
             t_end: end time of integration
 
         Returns:
-            list of transit epochs
-            list of transit times
+            tuple:
+                - list of transit epochs
+                - list of transit times
 
     """
     try:
@@ -175,10 +178,11 @@ def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end, skip_planet_idx
             skip_planet_idx: list of planet idx to be skipped from output (starting from 0)
 
         Returns:
-            list of transit epochs
-            list of transit times
-            list of sky-plane distances (au)
-            list of sky-plane velocities (au/day)
+            tuple:
+                - list of transit epochs
+                - list of transit times
+                - list of sky-plane distances (au)
+                - list of sky-plane velocities (au/day)
 
     """
     try:

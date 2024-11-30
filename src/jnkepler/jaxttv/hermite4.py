@@ -22,8 +22,9 @@ def get_derivs(x, v, masses):
             masses: masses of the bodies (Nbody)
 
         Returns:
-            a: accelerations (Norbit, xyz)
-            adot: time derivatives of accelerations (Norbit, xyz)
+            tuple:
+                - accelerations (Norbit, xyz)
+                - time derivatives of accelerations (Norbit, xyz)
 
     """
     xjk = jnp.transpose(x[:, None] - x[None, :], axes=[0, 2, 1])
@@ -54,7 +55,9 @@ def predict(x, v, a, dota, dt):
             dt: time step
 
         Returns:
-            new positions, new velocities
+            tuple:
+                - new positions
+                - new velocities
 
     """
     xp = x + dt * (v + 0.5 * dt * (a + dt * dota / 3.))
@@ -75,7 +78,9 @@ def correct(xp, vp, a1, dota1, a, dota, dt, alpha=7./6.):
             dt: time step
 
         Returns:
-            corrected positions, corrected velocities
+            tuple:
+                - corrected positions
+                - corrected velocities
 
     """
     a02 = (-6 * (a - a1) - 2 * dt * (2 * dota + dota1)) / dt**2
@@ -120,8 +125,9 @@ def integrate_xv(x, v, masses, times):
             times: cumulative sum of time steps
 
         Returns:
-            times (initial time omitted)
-            CoM position/velocity array (Nstep, x or v, Norbit, xyz)
+            tuple:
+                - times (initial time omitted)
+                - CoM position/velocity array (Nstep, x or v, Norbit, xyz)
 
     """
     dtarr = jnp.diff(times)

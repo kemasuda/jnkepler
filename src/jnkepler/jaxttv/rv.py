@@ -18,7 +18,7 @@ def rv_from_xvjac(times_rv, times, xvjac, masses):
             masses: masses of the bodies (Nbody,), solar unit
 
         Returns:
-            stellar RVs at times_rvs (m/s), positive when the star is moving away
+            array: stellar RVs at times_rvs (m/s), positive when the star is moving away
 
     """
     xast, vast = jacobi_to_astrocentric(
