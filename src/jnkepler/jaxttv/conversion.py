@@ -15,7 +15,7 @@ BIG_G = 2.959122082855911e-4
 
 
 def reduce_angle(M):
-    """ get angles between -pi and pi
+    """get angles between -pi and pi
 
         Args:
             M: angle (radian)
@@ -32,7 +32,7 @@ def m_to_u(M, ecc):
 
 
 def tic_to_u(tic, period, ecc, omega, t_epoch):
-    """ convert time of inferior conjunction to eccentric anomaly u
+    """convert time of inferior conjunction to eccentric anomaly u
 
         Args:
             tic: time of inferior conjunction
@@ -56,7 +56,7 @@ def tic_to_u(tic, period, ecc, omega, t_epoch):
 
 
 def tic_to_m(tic, period, ecc, omega, t_epoch):
-    """ convert time of inferior conjunction to mean anomaly M_epoch
+    """convert time of inferior conjunction to mean anomaly M_epoch
 
         Args:
             tic: time of inferior conjunction
@@ -78,7 +78,7 @@ def tic_to_m(tic, period, ecc, omega, t_epoch):
 
 
 def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
-    """ convert single set of orbital elements to position and velocity
+    """convert single set of orbital elements to position and velocity
 
         Args:
             porb: orbital period (day)
@@ -116,21 +116,21 @@ def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
 
 
 def xv_to_elements(x, v, ki):
-    """ convert position/velocity to elements
+    """convert position/velocity to elements
 
         Args:
             x, v: position and velocity (Norbit, xyz)
             ki: 'GM' in Kepler's 3rd law (Norbit); depends on what x/v mean (Jacobi, astrocentric, ...)
 
         Returns:
-            array of
-                semi-major axis (au)
-                orbital period (day)
-                eccentricity
-                inclination (radian)
-                argument of periastron (radian)
-                longitude of ascending node (radian)
-                mean anomaly (radian)
+            array containing the following:
+                - semi-major axis (au)
+                - orbital period (day)
+                - eccentricity
+                - inclination (radian)
+                - argument of periastron (radian)
+                - longitude of ascending node (radian)
+                - mean anomaly (radian)
 
     """
     r0 = jnp.sqrt(jnp.sum(x*x, axis=1))
@@ -162,7 +162,7 @@ def xv_to_elements(x, v, ki):
 
 
 def jacobi_to_astrocentric(xjac, vjac, masses):
-    """ conversion from Jacobi to astrocentric
+    """conversion from Jacobi to astrocentric
 
         Args:
             xjac: jacobi positions (Norbit, xyz)
@@ -184,8 +184,9 @@ j2a_map = vmap(jacobi_to_astrocentric, (0, 0, None), 0)  # not used?
 
 
 def astrocentric_to_cm(xast, vast, masses):
-    """ conversion from astrocentric to CoM
-    note that star is added in the CoM frame.
+    """conversion from astrocentric to CoM
+
+    Note that star is added in the CoM frame.
 
         Args:
             xast: astrocentric positions (Norbit, xyz)
@@ -209,7 +210,7 @@ a2cm_map = vmap(astrocentric_to_cm, (0, 0, None), 0)
 
 
 def cm_to_astrocentric(x, v, a, j):
-    """ astrocentric x/v/a of the jth orbit (planet) from CoM x/v/a
+    """astrocentric x/v/a of the jth orbit (planet) from CoM x/v/a
 
         Args:
             x: CoM positions (Nbody, xyz)
@@ -258,17 +259,18 @@ geta_map = vmap(get_acm, (0, None), 0)
 
 
 def xvjac_to_xvacm(x, v, masses):
-    """ Conversion from Jacobi to center-of-mass
-    xv is assumed to be the result of integration: 1st axis is for the times.
+    """Conversion from Jacobi to center-of-mass
+
+    x and v are assumed to be the result of integration: 1st axis is for the times.
 
         Args:
             xv: positions and velocities in Jacobi coordinates (Nstep, x or v, Norbit, xyz)
             masses: masses of the bodies (Nbody,), solar unit
 
         Returns:
-            positions in the CoM frame (Nstep, Norbit)
-            velocities in the CoM frame
-            accelerations in the CoM frame
+            xcm: positions in the CoM frame (Nstep, Norbit)
+            vcm: velocities in the CoM frame
+            acm: accelerations in the CoM frame
 
     """
     xa, va = jacobi_to_astrocentric(x, v, masses)
@@ -279,16 +281,16 @@ def xvjac_to_xvacm(x, v, masses):
 
 def xvjac_to_xvcm(x, v, masses):
     """ Conversion from Jacobi to center-of-mass
-    xv is assumed to be the result of integration: 1st axis is for the times.
+
+    x and v are assumed to be the result of integration: 1st axis is for the times.
 
         Args:
             xv: positions and velocities in Jacobi coordinates (Nstep, x or v, Norbit, xyz)
             masses: masses of the bodies (Nbody,), solar unit
 
         Returns:
-            positions in the CoM frame (Nstep, Norbit)
-            velocities in the CoM frame
-            accelerations in the CoM frame
+            xcm: positions in the CoM frame (Nstep, Norbit)
+            vcm: velocities in the CoM frame
 
     """
     xa, va = jacobi_to_astrocentric(x, v, masses)
