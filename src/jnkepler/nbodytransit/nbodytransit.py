@@ -136,10 +136,10 @@ class NbodyTransit(JaxTTV):
 
             Args:
                 par_dict: dict of input parameters consisting of:
-                    - TTV parameters: same as jaxttv
-                    - srad: stellar radius (in units of solar radius)
-                    - radius_ratio: planet-to-star radius ratio (Norbit,)
-                    - u1, u2: quadratic limb-darkening coefficients
+                    * TTV parameters: same as jaxttv
+                    * srad: stellar radius (in units of solar radius)
+                    * radius_ratio: planet-to-star radius ratio (Norbit,)
+                    * u1, u2: quadratic limb-darkening coefficients
                 times_rv: times at which RVs are evaluated
 
             Returns:
