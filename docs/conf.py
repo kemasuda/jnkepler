@@ -15,6 +15,7 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath('~/jnkepler'))
 
+master_doc = "index"
 
 # -- Project information -----------------------------------------------------
 
@@ -52,8 +53,8 @@ html_theme = 'sphinx_rtd_theme'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-# html_static_path = ['_static']
-# html_logo = '_static/logo.png'
+html_static_path = ['_static']
+html_logo = '_static/logo.png'
 
 # html_theme_options = {
 #    'style_nav_header_background': '#333',
