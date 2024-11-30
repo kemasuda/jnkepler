@@ -177,13 +177,12 @@ class JaxTTV(Nbody):
 
             Args:
                 par_dict: dict containing parameters
-                transit_orbit_idx: array of idx of the planet (orbit) for each transit times should be evaulated, starting from 0.
-                    This must be specified when non-transiting planets exist.
-                    If None, all the planets are assuming to be transiting. This is the same as setting transit_orbit_idx = jnp.arange(nplanet).
+                transit_orbit_idx: array of idx of the planet (orbit) for each transit times should be evaulated, starting from 0. This must be specified when non-transiting planets exist. If None, all the planets are assuming to be transiting. This is the same as setting transit_orbit_idx = jnp.arange(nplanet).
 
             Returns:
-                1D flattened array of transit times
-                fractional energy change
+                tuple containing:
+                    - 1D array: flattened array of transit times
+                    - float: fractional energy change
 
         """
         xjac0, vjac0, masses = initialize_jacobi_xv(
@@ -211,17 +210,17 @@ class JaxTTV(Nbody):
         """compute model transit times and stellar RVs
 
             Args:
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
+                par_dict: dict containing parameters
                 times_rv: times at which stellar RVs are evaluated
                 transit_orbit_idx: array of idx of the planet (orbit) for each transit times should be evaulated, starting from 0.
                     This must be specified when non-transiting planets exist.
                     If None, all the planets are assuming to be transiting. This is the same as setting transit_orbit_idx = jnp.arange(nplanet).
 
             Returns:
-                1D flattened array of transit times
-                1D array of stellar RVs (m/s)
-                fractional energy change
+                tuple containing:
+                    - 1D array: flattened array of transit times
+                    - 1D array: stellar RVs (m/s)
+                    - float: fractional energy change
 
         """
         xjac0, vjac0, masses = initialize_jacobi_xv(
@@ -294,12 +293,12 @@ class JaxTTV(Nbody):
         This function is slower than get_ttvs and should not be used for fitting.
 
             Args:
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
+                par_dict: dict containing parameters
 
             Returns:
-                1D flattened array of transit times
-                fractional energy change
+                tuple of 
+                    - 1D flattened array of transit times
+                    - fractional energy change
 
         """
         # set t_start, t_end, dt, time array
@@ -335,8 +334,7 @@ class JaxTTV(Nbody):
         """compute all transit times and retunrs a list
 
             Args:
-                elements: orbital elements (Nplanet, 6)
-                masses: masses of the central star and planets (Nplanet+1,)
+                par_dict: dict containing parameters
                 truncate: if True, only compute transit times up to the last observed time instead of t_end
 
             Returns:
@@ -356,6 +354,16 @@ class JaxTTV(Nbody):
 
     def check_residuals(self, par_dict, jitters=None, student=True, normalize_residuals=True, plot=True, fit_mean=False):
         """check the distribution of residuals, fit them with Student's t distritbution
+
+            Args:
+                par_dict: dict containing parameters
+
+            Returns:
+                dict with the following keys:
+                    - mean of reisudals
+                    - SD of residuals
+                params_st: parameters of Student's t dist (lndf, lnvar, mean)
+
         """
 
         tc = self.get_transit_times_obs(par_dict)[0]

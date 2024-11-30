@@ -56,14 +56,13 @@ def fit_t_distribution(y, plot=True, fit_mean=False):
             fit_mean: if True, mean of the distribution is also fitted
 
         Returns: 
-            dictionary {
-                lndf_loc: mean of log(dof),
-                lndf_scale: std of log(dof),
-                lnvar_loc: mean of log(variance),
-                lnvar_scale: std of log(variance),
-                mean_loc: mean of mean (if fitted),
-                mean_scale: std of mean (if fitted)
-            }
+            dictionary with the following keys:
+                - lndf_loc: mean of log(dof)
+                - lndf_scale: std of log(dof)
+                - lnvar_loc: mean of log(variance)
+                - lnvar_scale: std of log(variance)
+                - mean_loc: mean of mean (if fitted)
+                - mean_scale: std of mean (if fitted)
 
     """
     def model(y):

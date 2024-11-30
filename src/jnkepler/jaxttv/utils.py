@@ -60,12 +60,13 @@ def initialize_jacobi_xv(par_dict, t_epoch):
 
         Args:
             par_dict: parameter dictionary that needs to contain
-                either (ecosw, esinw) or (e, omega)
-                cosi (set to be 0 if not specified)
-                lnode (set to be 0 if not specified)
-                either (time of inferior conjunction) or (mean anomaly)
-                stellar mass (set to be 1 if not specified), solar unit
-                either (planetary mass) or (ln planetary mass), solar unit
+                - either (ecosw, esinw) or (e, omega)
+                - cosi (set to be 0 if not specified)
+                - lnode (set to be 0 if not specified)
+                - either (time of inferior conjunction) or (mean anomaly)
+                - stellar mass (set to be 1 if not specified), solar unit
+                - either (planetary mass) or (ln planetary mass), solar unit
+
             t_epoch: epoch at which elements are defined
 
         Returns:
