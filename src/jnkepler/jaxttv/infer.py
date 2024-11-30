@@ -82,7 +82,7 @@ def ttv_optim_curve_fit(jttv, param_bounds_, p_init=None, jac=False, plot=True, 
 
         Args:
             jttv: JaxTTV object
-            param_bounds_: bounds for parameters, 0: lower, 1: upper
+            param_bounds: bounds for parameters, 0: lower, 1: upper
             p_init: initial parameter values (if None, center of lower/upper bounds)
             jac: if True jacrev(model) is used
 
