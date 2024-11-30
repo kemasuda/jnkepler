@@ -24,7 +24,7 @@ def optim_svi(numpyro_model, step_size, num_steps, p_initial=None, **kwargs):
             p_initial: initial parameter set (dict); if None, use init_to_sample to initialize
 
         Returns:
-            dict: dict containing optimized parameters
+            dict: dictionary containing optimized parameters
 
     """
     optimizer = numpyro.optim.Adam(step_size=step_size)
@@ -56,7 +56,7 @@ def fit_t_distribution(y, plot=True, fit_mean=False):
             fit_mean: if True, mean of the distribution is also fitted
 
         Returns: 
-            dict: dictionary with the following keys
+            dict: dictionary with the following keys:
                 - lndf_loc: mean of log(dof)
                 - lndf_scale: std of log(dof)
                 - lnvar_loc: mean of log(variance)
