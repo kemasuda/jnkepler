@@ -76,10 +76,10 @@ class NbodyTransit(JaxTTV):
         """compute sky-plane positions and velocities at transit centers
 
             Args:
-                par_dict: dict of TTV parameters
+                par_dict (dict): dict containing TTV parameters
 
             Returns:
-                tuple of:
+                tuple:
                     - transit centers (Ntransit)
                     - astrocentric positions in the sky plane at transit centers (Ntransit, xy)
                     - astrocentric velocities in the sky plane at transit centers (Ntransit, xy)
@@ -103,14 +103,14 @@ class NbodyTransit(JaxTTV):
         """compute nbody flux
 
             Args:
-                par_dict: dict of input parameters consisting of:
+                par_dict (dict): dict containing input parameters:
                     - TTV parameters
                     - srad: stellar radius (in units of solar radius)
                     - radius_ratio: planet-to-star radius ratio (Norbit,)
                     - u1, u2: quadratic limb-darkening coefficients
 
             Returns:
-                tuple of:
+                tuple:
                     - transit light curve (len(times_lc),)
                     - transit times (1D flattened array)
 
@@ -135,15 +135,15 @@ class NbodyTransit(JaxTTV):
         """compute nbody flux and RV
 
             Args:
-                par_dict: dict of input parameters consisting of:
-                    * TTV parameters: same as jaxttv
-                    * srad: stellar radius (in units of solar radius)
-                    * radius_ratio: planet-to-star radius ratio (Norbit,)
-                    * u1, u2: quadratic limb-darkening coefficients
+                par_dict (dict): dict containing input parameters:
+                    - TTV parameters
+                    - srad: stellar radius (in units of solar radius)
+                    - radius_ratio: planet-to-star radius ratio (Norbit,)
+                    - u1, u2: quadratic limb-darkening coefficients
                 times_rv: times at which RVs are evaluated
 
             Returns:
-                tuple of:
+                tuple:
                     - transit light curve (len(times_lc),)
                     - transit times (1D flattened array)
                     - stellar RVs at times_rvs (m/s), positive when the star is moving away
@@ -171,12 +171,13 @@ def initialize_transit_params(par_dict_):
     """initialize transit parameters
 
         Args:
-            par_dict
+            par_dict (dict)
 
         Returns:
-            stellar radius (solar unit); stellar mass = 1 assumed if only density is specified in par_dict
-            radius ratio
-            coefficients for quadratic limb-darkening law
+            dict: following parameters are newly added:
+                - stellar radius (solar unit); stellar mass = 1 assumed if only density is specified in par_dict
+                - radius ratio
+                - coefficients for quadratic limb-darkening law
 
     """
     keys = par_dict_.keys()
@@ -226,7 +227,8 @@ def q_to_u(q1, q2):
             q1, q2: quadratic limb-darkening coefficients as parameterized in Kipping, D. M. 2013, MNRAS, 435, 2152
 
         Returns:
-            u1, u2: quadratic limb-darkening coefficients
+            tuple: 
+                quadratic limb-darkening coefficients u1, u2
 
     """
     usum = jnp.sqrt(q1)
@@ -247,7 +249,7 @@ def b_to_cosi(b, period, ecosw, esinw, rstar, mstar):
             mstar: stellar mass (solar unit)
 
         Returns:
-            cosine of inclination
+            float: cosine of inclination
 
     """
     # adopting G, M_sun, R_sun from astropy.constants
