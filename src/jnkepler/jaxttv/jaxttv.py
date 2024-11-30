@@ -88,8 +88,8 @@ class JaxTTV(Nbody):
     def set_tcobs(self, tcobs, p_init, errorobs=None, print_info=True):
         """set observed transit times
 
-        JaxTTV returns transit times that are closest to the observed times,
-        rather than all the transit times between t_start and t_end.
+            Note:
+                JaxTTV returns transit times that are closest to the observed times set here, rather than all the transit times between t_start and t_end.
 
             Args:
                 tcobs: list of the arrays of transit times for each planet
@@ -172,8 +172,9 @@ class JaxTTV(Nbody):
     def get_transit_times_obs(self, par_dict, transit_orbit_idx=None):
         """compute model transit times 
 
-        This function returns only transit times that are closest to the observed ones.
-        To get all the transit times, use get_transit_times_all instead.
+            Note:
+                This function returns only transit times that are closest to the observed ones.
+                To get all the transit times, use get_transit_times_all instead.
 
             Args:
                 par_dict: dict containing parameters
@@ -287,8 +288,6 @@ class JaxTTV(Nbody):
     @partial(jit, static_argnums=(0, 2, 3, 4))
     def get_transit_times_all(self, par_dict, t_start=None, t_end=None, dt=None, transit_orbit_idx=None):
         """compute all model transit times between t_start and t_end
-
-        This function is slower than get_ttvs and should not be used for fitting.
 
             Args:
                 par_dict: dict containing parameters
@@ -595,7 +594,7 @@ def integrate_orbits_symplectic(xjac0, vjac0, masses, times, dt, nitr_kepler):
 
 @jit
 def integrate_orbits_hermite(xjac0, vjac0, masses, times):
-    """ symplectic integration of the orbits
+    """Hermite integration of the orbits
 
         Args:
             xjac0: initial Jacobi positions (Norbit, xyz)

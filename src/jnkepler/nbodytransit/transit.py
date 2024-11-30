@@ -51,8 +51,10 @@ def compute_relative_flux_loss(barr, rarr, u1, u2):
 
 def compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, times, times_transit_idx, times_planet_idx):
     """ compute light curve given N-body model
-    This function can handle simultaneous transits but is slower than the function below.
-    Overlap between the planets during a transit is not yet considered.
+
+        Note:
+            This function can handle simultaneous transits but is slightly slower than `compute_nbody_flux_nooverlap.`
+            Overlap between the planets during a transit is not yet considered.
 
         Args:
             rstar: stellar radius (solar unit)
@@ -79,7 +81,9 @@ def compute_nbody_flux(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, times, times_t
 
 def compute_nbody_flux_nooverlap(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, times, times_transit_idx, times_planet_idx):
     """ compute light curve given N-body model
-    This function assumes that the data do not include overlapping transits.
+
+        Note:
+            This function assumes that the data do not include simultaneous transits of two planets.
 
         Args:
             rstar: stellar radius (solar unit)

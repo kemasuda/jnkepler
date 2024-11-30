@@ -274,7 +274,8 @@ def get_elements(x, v, gm):
 def find_transit_times_kepler(xast, vast, kast, dt, nitr):
     """find transit times via interpolation
 
-    This function is adapted from TTVFast https://github.com/kdeck/TTVFast, original scheme developed by Nesvorny et al. (2013, ApJ 777,3)
+        Note:
+            This function is adapted from TTVFast https://github.com/kdeck/TTVFast, original scheme developed by Nesvorny et al. (2013, ApJ 777,3)
 
         Args:
             xast: astrocentric positions (Norbit, xyz)
@@ -330,9 +331,10 @@ find_transit_times_kepler_map = vmap(
 
 
 def find_transit_times_kepler_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=3):
-    """ find transit times for all planets via interpolation
+    """find transit times for all planets via interpolation
 
-    NOTE: This still fails for large dt for reason yet to be understood.
+        Note: 
+            Bug: this function sometimes fails for large dt for reason yet to be understood.
 
         Args:
             pidxarr: array of orbit index starting from 0 (Ntransit,)

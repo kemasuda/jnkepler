@@ -45,7 +45,7 @@ def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_de
 
 
 def get_planets_smass(pdic, num_planets):
-    """ set up planets class for ttvfast-python
+    """set up planets class for ttvfast-python
 
         Args:
             pdic: parameter dataframe from params_for_ttvfast
@@ -80,7 +80,7 @@ def get_planets_smass(pdic, num_planets):
 
 
 def get_ttvfast_model_rv(pdic, num_planets, t_start, dt, t_end, times_rv, skip_planet_idx=[]):
-    """ compute transit times using ttvfast-python
+    """compute transit times using ttvfast-python
 
         Args:
             pdic: parameter dataframe from params_for_ttvfast
@@ -124,7 +124,7 @@ def get_ttvfast_model_rv(pdic, num_planets, t_start, dt, t_end, times_rv, skip_p
 
 
 def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end, skip_planet_idx=[]):
-    """ compute transit times using ttvfast-python
+    """compute transit times using ttvfast-python
 
         Args:
             pdic: parameter dataframe from params_for_ttvfast
@@ -164,7 +164,7 @@ def get_ttvfast_model(pdic, num_planets, t_start, dt, t_end, skip_planet_idx=[])
 
 
 def get_ttvfast_model_all(pdic, num_planets, t_start, dt, t_end, skip_planet_idx=[]):
-    """ compute transit times using ttvfast-python
+    """compute transit times using ttvfast-python
 
         Args:
             pdic: parameter dataframe from params_for_ttvfast

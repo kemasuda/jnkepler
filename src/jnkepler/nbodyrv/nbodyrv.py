@@ -8,7 +8,7 @@ from ..jaxttv.symplectic import integrate_xv
 
 
 class NbodyRV(Nbody):
-    """class for RV-only analysis """
+    """class for RV-only analysis"""
 
     def __init__(self, t_start, t_end, dt, nitr_kepler=3):
         """initialization

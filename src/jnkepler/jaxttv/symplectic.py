@@ -13,7 +13,7 @@ config.update('jax_enable_x64', True)
 
 
 def dEstep(x, ecosE0, esinE0, dM):
-    """ single step to solve incremental Kepler's equation to obtain delta(eccentric anomaly)
+    """single step to solve incremental Kepler's equation to obtain delta(eccentric anomaly)
 
         Args:
             x: initial guess for dE
@@ -39,8 +39,10 @@ def dEstep(x, ecosE0, esinE0, dM):
 
 
 def kepler_step(x, v, gm, dt, nitr=3):
-    """ Kepler step
-    NOTE: should use jax.lax.while_loop w/ forward-mode differentiation?
+    """Kepler step
+
+        Note: 
+            currently the number of iterations is fixed at the beginning of itegration; may be replaced with jax.lax.while_loop in future
 
         Args:
             x: positions (Norbit, xyz)
@@ -83,7 +85,7 @@ def kepler_step(x, v, gm, dt, nitr=3):
 
 
 def Hint(x, v, masses):
-    """ interaction Hamiltonian divided by Gm_0m_0
+    """interaction Hamiltonian divided by Gm_0m_0
 
         Args:
             x: positions (Norbit, xyz)
@@ -117,7 +119,7 @@ gHint = grad(Hint)  # default to argnums=0
 
 
 def Hintgrad(x, v, masses):
-    """ gradient of the interaction Hamiltonian times (star mass / planet mass)
+    """gradient of the interaction Hamiltonian times (star mass / planet mass)
 
         Args:
             x: positions (Norbit, xyz)
@@ -133,7 +135,7 @@ def Hintgrad(x, v, masses):
 
 
 def nbody_kicks(x, v, ki, masses, dt):
-    """ apply N-body kicks to velocities
+    """apply N-body kicks to velocities
 
         Args:
             x: positions (Norbit, xyz)
@@ -152,7 +154,7 @@ def nbody_kicks(x, v, ki, masses, dt):
 
 
 def integrate_xv(x, v, masses, times, nitr=3):
-    """ symplectic integration of the orbits
+    """symplectic integration of the orbits
 
         Args:
             x: initial Jacobi positions (Norbit, xyz)
@@ -187,7 +189,7 @@ def integrate_xv(x, v, masses, times, nitr=3):
 
 
 def kepler_step_map(xjac, vjac, masses, dt, nitr=3):
-    """ vmap version of kepler_step; map along the first axis (Ntime)
+    """vmap version of kepler_step; map along the first axis (Ntime)
 
         Args:
             xjac: Jacobi positions (Ntime, Norbit, xyz)
@@ -208,7 +210,7 @@ def kepler_step_map(xjac, vjac, masses, dt, nitr=3):
 
 
 def kick_kepler_map(xjac, vjac, masses, dt, nitr=3):
-    """ vmap version of nbody_kicks + kepler_step; map along the first axis (Ntime)
+    """vmap version of nbody_kicks + kepler_step; map along the first axis (Ntime)
 
         Args:
             xjac: jacobi positions (Ntime, Norbit, xyz)
@@ -231,7 +233,7 @@ def kick_kepler_map(xjac, vjac, masses, dt, nitr=3):
 
 
 def compute_corrector_coefficientsTO():
-    """ coefficients for the third-order corrector """
+    """coefficients for the third-order corrector"""
     corr_alpha = jnp.sqrt(7./40.)
     corr_beta = 1. / (48.0 * corr_alpha)
 
@@ -242,7 +244,7 @@ def compute_corrector_coefficientsTO():
 
 
 def corrector_step(x, v, ki, masses, a, b):
-    """ corrector step
+    """corrector step
 
         Args:
             x: positions (Norbit, xyz)
@@ -262,7 +264,7 @@ def corrector_step(x, v, ki, masses, a, b):
 
 
 def real_to_mapTO(x, v, ki, masses, dt):
-    """ transformation between real and mapping coordinates
+    """transformation between real and mapping coordinates
 
         Args:
             x: positions (Norbit, xyz)

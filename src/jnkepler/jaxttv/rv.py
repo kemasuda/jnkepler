@@ -7,8 +7,9 @@ au_per_day = 1.495978707e11 / 86400.  # m/s
 
 
 def rv_from_xvjac(times_rv, times, xvjac, masses):
-    """ compute stellar RV
-    NOTE: This will be more efficient if interpolation is performed before conversion to CM frame
+    """compute stellar RV
+        Note:
+            This function will be more efficient if interpolation is performed before conversion to CM frame
 
         Args:
             times_rv: times at which RVs are evaluated

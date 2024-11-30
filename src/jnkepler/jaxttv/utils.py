@@ -36,7 +36,8 @@ def params_to_dict(params, npl, keys):
 def em_to_dict(elements, masses):
     """convert arrays of elements and masses in v0.1.0 to parameter dict
 
-    This function is mainly used in tests.
+        Note:
+            This function is mainly for running tests; no longer needed for v>=0.2.
 
         Args:
             elements: elements (JaxTTV format)
@@ -56,7 +57,8 @@ def em_to_dict(elements, masses):
 def initialize_jacobi_xv(par_dict, t_epoch):
     """compute initial position/velocity from JaxTTV elements
 
-    Here the elements are interpreted as Jacobi elements using the total interior mass (see Rein & Tamayo 2015).
+        Note:
+            Here the elements are interpreted as Jacobi elements using the total interior mass (see Section 2.2 of Rein & Tamayo 2015).
 
         Args:
             par_dict: parameter dictionary that needs to contain
@@ -130,38 +132,9 @@ def initialize_jacobi_xv(par_dict, t_epoch):
     return jnp.array(xjac), jnp.array(vjac), masses
 
 
-def _initialize_jacobi_xv(elements, masses, t_epoch):
-    """ compute initial position/velocity from JaxTTV elements
-        here the elements are interpreted as Jacobi using the total interior mass (see Rein & Tamayo 2015)
-
-        Args:
-            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
-            masses: masses of the bodies (Nbody,)
-            t_epoch: epoch at which elements are defined
-
-        Returns:
-            Jacobi positions and velocities at t_epoch (Norbit, xyz)
-
-    """
-    xjac, vjac = [], []
-    for j in range(len(elements)):
-        porb, ecosw, esinw, cosi, lnode, tic = elements[j]
-        ecc = jnp.sqrt(ecosw**2 + esinw**2)
-        omega = jnp.arctan2(esinw, ecosw)
-        inc = jnp.arccos(cosi)
-
-        u = tic_to_u(tic, porb, ecc, omega, t_epoch)
-        xj, vj = elements_to_xv(porb, ecc, inc, omega,
-                                lnode, u, jnp.sum(masses[:j+2]))
-        xjac.append(xj)
-        vjac.append(vj)
-
-    return jnp.array(xjac), jnp.array(vjac)
-
-
 @jit
 def get_energy(x, v, masses):
-    """ compute total energy of the system in CM frame
+    """compute total energy of the system in CM frame
 
         Args:
             x: CM positions (Nbody, xyz)
@@ -185,7 +158,7 @@ get_energy_map = jit(vmap(get_energy, (0, 0, None), 0))
 
 @jit
 def get_energy_diff(xva, masses):
-    """ compute fractional energy change given integration result
+    """compute fractional energy change given integration result
 
         Args:
             xva: posisions, velocities, accelerations in CoM frame (Nstep, x or v or a, Norbit, xyz)
@@ -200,29 +173,9 @@ def get_energy_diff(xva, masses):
     return etot[1]/etot[0] - 1.
 
 
-'''
-@jit
-def get_energy_diff_jac(xvjac, masses):
-    """ compute fractional energy change given integration result
-
-        Args:
-            xvjac: Jacobi posisions and velocities (Nstep, x or v, Norbit, xyz)
-            masses: masses of the bodies (Nbody,)
-
-        Returns:
-            fractional change in total energy
-
-    """
-    _xvjac = jnp.array([xvjac[0], xvjac[-1]])
-    _xcm, _vcm = xvjac_to_xvcm(_xvjac, masses)
-    etot = get_energy_map(_xcm, _vcm, masses)
-    return etot[1]/etot[0] - 1.
-'''
-
-
 @jit
 def get_energy_diff_jac(xvjac, masses, dt):
-    """ compute fractional energy change given integration result
+    """compute fractional energy change given integration result
 
         Args:
             xvjac: Jacobi posisions and velocities (Nstep, x or v, Norbit, xyz)
@@ -241,7 +194,10 @@ def get_energy_diff_jac(xvjac, masses, dt):
 
 
 def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
-    """ convert JaxTTV elements/masses into dictionary
+    """convert JaxTTV elements/masses into dictionary
+
+        Note:
+            This function is for v<0.2.
 
         Args:
             elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
@@ -286,7 +242,7 @@ def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
 
 
 def params_to_elements(params, npl):
-    """ convert JaxTTV parameter array into element and mass arrays
+    """convert JaxTTV parameter array into element and mass arrays
 
         Args:
             params: JaxTTV parameter array
@@ -303,7 +259,7 @@ def params_to_elements(params, npl):
 
 
 def convert_elements(par_dict, t_epoch, WHsplit=False):
-    """ convert JaxTTV elements into more normal sets of parameters
+    """convert JaxTTV elements into more normal sets of parameters
 
         Args:
             par_dict: parameter dict
@@ -330,7 +286,7 @@ def convert_elements(par_dict, t_epoch, WHsplit=False):
 
 
 def findidx_map(arr1, arr2):
-    """ pick up elements of arr1 nearest to each element in arr2
+    """pick up elements of arr1 nearest to each element in arr2
 
         Args:
             arr1: array from which elements are picked up

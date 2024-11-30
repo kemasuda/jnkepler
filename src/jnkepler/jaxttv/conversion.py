@@ -186,16 +186,13 @@ j2a_map = vmap(jacobi_to_astrocentric, (0, 0, None), 0)  # not used?
 def astrocentric_to_cm(xast, vast, masses):
     """conversion from astrocentric to CoM
 
-        Note: 
-            star (index 0) is added when moving to the CoM frame.
-
         Args:
             xast: astrocentric positions (Norbit, xyz)
             vast: astrocentric velocities (Norbit, xyz)
             masses: masses of the bodies (Nbody,)
 
         Returns:
-            CoM positions and velocities (Nbody, xyz)
+            CoM positions and velocities (Nbody, xyz); now star (index 0) is added
 
     """
     mtot = jnp.sum(masses)
@@ -232,7 +229,7 @@ def cm_to_astrocentric(x, v, a, j):
 
 
 def get_acm(x, masses):
-    """ compute acceleration given position, velocity, mass
+    """compute acceleration given position, velocity, mass
 
         Args:
             x: positions in CoM frame (Norbit, xyz)
@@ -262,8 +259,6 @@ geta_map = vmap(get_acm, (0, None), 0)
 def xvjac_to_xvacm(x, v, masses):
     """Conversion from Jacobi to center-of-mass
 
-    x and v are assumed to be the result of integration: 1st axis is for the times.
-
         Args:
             xv: positions and velocities in Jacobi coordinates (Nstep, x or v, Norbit, xyz)
             masses: masses of the bodies (Nbody,), solar unit
@@ -282,8 +277,6 @@ def xvjac_to_xvacm(x, v, masses):
 
 def xvjac_to_xvcm(x, v, masses):
     """ Conversion from Jacobi to center-of-mass
-
-    x and v are assumed to be the result of integration: 1st axis is for the times.
 
         Args:
             xv: positions and velocities in Jacobi coordinates (Nstep, x or v, Norbit, xyz)

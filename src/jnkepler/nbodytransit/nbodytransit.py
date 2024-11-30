@@ -19,8 +19,9 @@ config.update('jax_enable_x64', True)
 
 
 class NbodyTransit(JaxTTV):
-    """main class for photodynamical analysis
+    """main class for photodynamical analysis.
 
+    Note:
         Unlike in JaxTTV class, non-transiting objects are not yet supported.
 
     """
@@ -75,13 +76,15 @@ class NbodyTransit(JaxTTV):
         """compute sky-plane positions and velocities at transit centers
 
             Args:
-                elements: orbital elements in JaxTTV format
-                masses: masses of the bodies (in units of solar mass)
+                par_dict: dict of TTV parameters
 
             Returns:
-                tc: transit centers (Ntransit)
-                xsky_tc: astrocentric positions in the sky plane at transit centers (Ntransit, xy)
-                vsky_tc: astrocentric velocities in the sky plane at transit centers (Ntransit, xy)
+                tuple of:
+                    - transit centers (Ntransit)
+                    - astrocentric positions in the sky plane at transit centers (Ntransit, xy)
+                    - astrocentric velocities in the sky plane at transit centers (Ntransit, xy)
+                    - times
+                    - mass array (star+planets, solar unit)
 
         """
         xjac0, vjac0, masses = initialize_jacobi_xv(
@@ -100,14 +103,16 @@ class NbodyTransit(JaxTTV):
         """compute nbody flux
 
             Args:
-                par_dict: dict of input parameters; TTV parameters + 
-                    srad: stellar radius (in units of solar radius)
-                    radius_ratio: planet-to-star radius ratio (Norbit,)
-                    u1, u2: quadratic limb-darkening coefficients
+                par_dict: dict of input parameters consisting of:
+                    - TTV parameters
+                    - srad: stellar radius (in units of solar radius)
+                    - radius_ratio: planet-to-star radius ratio (Norbit,)
+                    - u1, u2: quadratic limb-darkening coefficients
 
             Returns:
-                nbodyflux: transit light curve (len(times_lc),)
-                tc: transit times (1D flattened array)
+                tuple of:
+                    - transit light curve (len(times_lc),)
+                    - transit times (1D flattened array)
 
         """
         _par_dict = initialize_transit_params(par_dict)
@@ -130,16 +135,18 @@ class NbodyTransit(JaxTTV):
         """compute nbody flux and RV
 
             Args:
-                par_dict: dict of input parameters; TTV parameters + 
-                    srad: stellar radius (in units of solar radius)
-                    radius_ratio: planet-to-star radius ratio (Norbit,)
-                    u1, u2: quadratic limb-darkening coefficients
+                par_dict: dict of input parameters consisting of:
+                    - TTV parameters
+                    - srad: stellar radius (in units of solar radius)
+                    - radius_ratio: planet-to-star radius ratio (Norbit,)
+                    - u1, u2: quadratic limb-darkening coefficients
                 times_rv: times at which RVs are evaluated
 
             Returns:
-                nbodyflux: transit light curve (len(times_lc),)
-                tc: transit times (1D flattened array)
-                nbodyrv: stellar RVs at times_rvs (m/s), positive when the star is moving away
+                tuple of:
+                    - transit light curve (len(times_lc),)
+                    - transit times (1D flattened array)
+                    - stellar RVs at times_rvs (m/s), positive when the star is moving away
 
         """
         _par_dict = initialize_transit_params(par_dict)

@@ -1,4 +1,7 @@
-# Kepler equation solver based on Markley (1995)
+""" Kepler equation solver based on Markley (1995) """
+
+__all__ = ["get_E"]
+
 import jax.numpy as jnp
 from jax import jit, config
 config.update('jax_enable_x64', True)
@@ -35,7 +38,7 @@ def correct_E(E, M, e):
 
 @jit
 def get_E(M, e):
-    """ compute eccentric anomaly given mean anomaly and eccentricity
+    """compute eccentric anomaly given mean anomaly and eccentricity
 
         Args:
             M: mean anomaly (should be between -pi and pi)

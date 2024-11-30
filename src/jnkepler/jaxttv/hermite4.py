@@ -14,7 +14,7 @@ config.update('jax_enable_x64', True)
 
 
 def get_derivs(x, v, masses):
-    """ compute acceleration and jerk given position, velocity, mass
+    """compute acceleration and jerk given position, velocity, mass
 
         Args:
             x: positions in CoM frame (Norbit, xyz)
@@ -44,7 +44,7 @@ def get_derivs(x, v, masses):
 
 
 def predict(x, v, a, dota, dt):
-    """ predictor step of Hermite integration
+    """predictor step of Hermite integration
 
         Args:
             x: positions in CoM frame (Norbit, xyz)
@@ -63,7 +63,7 @@ def predict(x, v, a, dota, dt):
 
 
 def correct(xp, vp, a1, dota1, a, dota, dt, alpha=7./6.):
-    """ corrector step of Hermite integration
+    """corrector step of Hermite integration
 
         Args:
             xp: positions in CoM frame (Norbit, xyz), predictor
@@ -86,12 +86,13 @@ def correct(xp, vp, a1, dota1, a, dota, dt, alpha=7./6.):
 
 
 def hermite4_step(x, v, masses, dt):
-    """ advance the system by a single predictor-corrector step
+    """advance the system by a single predictor-corrector step
 
         Args:
             x: positions in CoM frame (Norbit, xyz)
             v: velocities in CoM frame (Norbit, xyz)
             masses: masses of the bodies (Nbody)
+            dt: timestep
 
         Returns:
             new positions, new velocities, 'new' accelerations
@@ -110,7 +111,7 @@ hermite4_step_map = jit(vmap(hermite4_step, (0, 0, None, 0), 2))
 
 
 def integrate_xv(x, v, masses, times):
-    """ Hermite integration of the orbits
+    """Hermite integration of the orbits
 
         Args:
             x: initial CoM positions (Norbit, xyz)
