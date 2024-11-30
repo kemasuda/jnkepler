@@ -186,7 +186,8 @@ j2a_map = vmap(jacobi_to_astrocentric, (0, 0, None), 0)  # not used?
 def astrocentric_to_cm(xast, vast, masses):
     """conversion from astrocentric to CoM
 
-    Note that star is added in the CoM frame.
+        Note: 
+            star (index 0) is added when moving to the CoM frame.
 
         Args:
             xast: astrocentric positions (Norbit, xyz)

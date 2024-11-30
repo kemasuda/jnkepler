@@ -17,8 +17,7 @@ config.update('jax_enable_x64', True)
 
 
 def get_gderivs(xastj, vastj, aastj):
-    """ time derivatives of the 'g' function (squared sky-projected star-planet distance)
-    Here g = x*x + y*y
+    """time derivatives of g=x^2+y^2 function (squared sky-projected star-planet distance)
 
         Args:
             xastj: astrocentric positions (Norbit, xyz)
@@ -36,7 +35,7 @@ def get_gderivs(xastj, vastj, aastj):
 
 
 def find_transit_times_single(t, x, v, a, j, masses, nitr=5):
-    """ find transit times (cannot be jitted)
+    """find transit times (cannot be jitted)
 
         Args:
             t: times (Nstep,)
@@ -79,7 +78,7 @@ def find_transit_times_single(t, x, v, a, j, masses, nitr=5):
 
 
 def get_tcflag(xjac, vjac):
-    """ find times just after the transit centers using *Jacobi* coordinates
+    """find times just after the transit centers using *Jacobi* coordinates
 
         Args:
             xjac: jacobi positions (Nstep, Norbit, xyz)
@@ -102,7 +101,7 @@ def get_g_map(xjac, vjac, pidxarr):
 
 
 def find_tc_idx(t, tcflag, j, tcobs):
-    """ find indices for times where tcflag is True
+    """find indices for times where tcflag is True
 
         Args:
             t: times (Nstep,)
@@ -125,7 +124,7 @@ find_tc_idx_map = vmap(find_tc_idx, (None, None, 0, 0), 0)
 
 
 def get_nrstep(x, v, a, j):
-    """ compute NR step for jth orbit (planet)
+    """compute NR step for jth orbit (planet)
 
         Args:
             x: positions in CM frame (Norbit, xyz)
@@ -151,7 +150,7 @@ get_nrstep_map = vmap(get_nrstep, (0, 0, 0, 0), 0)
 
 
 def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
-    """ find transit times for all planets
+    """find transit times for all planets
 
         Args:
             pidxarr: array of orbit index starting from 0 (Ntransit,)
@@ -198,7 +197,7 @@ def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
 
 
 def find_transit_params_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
-    """ find transit times for all planets
+    """find transit times for all planets
 
         Args:
             pidxarr: array of orbit index starting from 0 (Ntransit,)
@@ -248,7 +247,7 @@ def find_transit_params_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
 
 
 def get_elements(x, v, gm):
-    """ get elements
+    """get elements
 
         Args:
             x: positions (Norbit, xyz)
@@ -273,8 +272,9 @@ def get_elements(x, v, gm):
 
 
 def find_transit_times_kepler(xast, vast, kast, dt, nitr):
-    """ find transit times via interpolation
-    adapted from TTVFast https://github.com/kdeck/TTVFast, original scheme developed by Nesvorny et al. (2013, ApJ 777,3)
+    """find transit times via interpolation
+
+    This function is adapted from TTVFast https://github.com/kdeck/TTVFast, original scheme developed by Nesvorny et al. (2013, ApJ 777,3)
 
         Args:
             xast: astrocentric positions (Norbit, xyz)
@@ -331,6 +331,7 @@ find_transit_times_kepler_map = vmap(
 
 def find_transit_times_kepler_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=3):
     """ find transit times for all planets via interpolation
+
     NOTE: This still fails for large dt for reason yet to be understood.
 
         Args:
