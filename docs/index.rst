@@ -12,6 +12,6 @@ jnkepler
    :maxdepth: 1
    :caption: API:
 
-   jnkepler
+   jnkepler/jnkepler.rst
 
 

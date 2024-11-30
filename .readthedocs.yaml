@@ -14,3 +14,10 @@ sphinx:
 python:
    install:
    - requirements: docs/requirements.txt
+
+
+build:
+  image: "latest"  # Use the latest version of the Read the Docs image
+  commands:
+    - sphinx-apidoc -F -o docs/jnkepler src/jnkepler  # Generate API docs manually before building
+    - make html  
