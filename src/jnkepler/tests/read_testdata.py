@@ -10,12 +10,14 @@ from jnkepler.jaxttv.utils import params_to_elements, elements_to_pdic
 
 
 def read_testdata_tc():
-    """read test transit times
+    """read test data
 
         Returns:
-            initialized JaxTTV class, parameter array, transit time array, parameter dict
-            note that this dict 
-
+            tuple:
+                - JaxTTV class
+                - parameter array
+                - transit time array 
+                - parameter dict
 
     """
     path = pkg_resources.resource_filename('jnkepler', 'data/')
@@ -44,12 +46,14 @@ def read_testdata_tc():
 
 
 def read_testdata_4planet():
-    """read test transit times
+    """read test data (4-planet solution to 3-planet TTVs)
 
         Returns:
-            initialized JaxTTV class, parameter array, transit time array, parameter dict
-            note that this dict 
-
+            tuple:
+                - JaxTTV class
+                - parameter array
+                - transit time array 
+                - parameter dict
 
     """
     datapath = pkg_resources.resource_filename(

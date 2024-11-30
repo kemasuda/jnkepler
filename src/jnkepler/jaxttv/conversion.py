@@ -90,8 +90,9 @@ def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
             mass: mass in Kepler's 3rd law
 
         Returns:
-            xout: positions (xyz, )
-            vout: velocities (xyz, )
+            tuple:
+                - xout: positions (xyz, )
+                - vout: velocities (xyz, )
 
     """
     cosu, sinu = jnp.cos(u), jnp.sin(u)
@@ -123,7 +124,7 @@ def xv_to_elements(x, v, ki):
             ki: 'GM' in Kepler's 3rd law (Norbit); depends on what x/v mean (Jacobi, astrocentric, ...)
 
         Returns:
-            array containing the following:
+            array:
                 - semi-major axis (au)
                 - orbital period (day)
                 - eccentricity
@@ -170,7 +171,9 @@ def jacobi_to_astrocentric(xjac, vjac, masses):
             masses: masses of the bodies (Nbody,)
 
         Returns:
-            astrocentric positions and velocities (Norbit, xyz)
+            tuple:
+                - astrocentric positions (Norbit, xyz)
+                - astrocentric positions (Norbit, xyz)
 
     """
     nbody = len(masses)
@@ -192,7 +195,9 @@ def astrocentric_to_cm(xast, vast, masses):
             masses: masses of the bodies (Nbody,)
 
         Returns:
-            CoM positions and velocities (Nbody, xyz); now star (index 0) is added
+            tuple:
+                - CoM positions (Nbody, xyz); now star (index 0) is added
+                - CoM velocities (Nbody, xyz); now star (index 0) is added
 
     """
     mtot = jnp.sum(masses)
@@ -211,15 +216,16 @@ def cm_to_astrocentric(x, v, a, j):
     """astrocentric x/v/a of the jth orbit (planet) from CoM x/v/a
 
         Args:
-            x: CoM positions (Nbody, xyz)
-            v: CoM velocities (Nbody, xyz)
-            a: CoM accelerations (Nbody, xyz)
+            x: CoM positions (Nstep, Nbody, xyz)
+            v: CoM velocities (Nstep, Nbody, xyz)
+            a: CoM accelerations (Nstep, Nbody, xyz)
             j: orbit (planet) index
 
         Returns:
-            astrocentric position/velocity/acceleration of jth orbit (planet)
-            (xyz,)
-
+            tuple:
+                - astrocentric position of jth orbit (Nstep, xyz)
+                - astrocentric velocity of jth orbit (Nstep, xyz)
+                - astrocentric acceleration of jth orbit (Nstep, xyz)
 
     """
     xastj = x[:, j, :] - x[:, 0, :]
@@ -236,7 +242,7 @@ def get_acm(x, masses):
             masses: masses of the bodies (Nbody)
 
         Returns:
-            a: accelerations (Norbit, xyz)
+            array: accelerations (Norbit, xyz)
 
     """
     xjk = jnp.transpose(x[:, None] - x[None, :], axes=[0, 2, 1])
@@ -264,9 +270,10 @@ def xvjac_to_xvacm(x, v, masses):
             masses: masses of the bodies (Nbody,), solar unit
 
         Returns:
-            xcm: positions in the CoM frame (Nstep, Norbit)
-            vcm: velocities in the CoM frame
-            acm: accelerations in the CoM frame
+            tuple:
+                - xcm: positions in the CoM frame (Nstep, Norbit)
+                - vcm: velocities in the CoM frame
+                - acm: accelerations in the CoM frame
 
     """
     xa, va = jacobi_to_astrocentric(x, v, masses)
@@ -283,8 +290,9 @@ def xvjac_to_xvcm(x, v, masses):
             masses: masses of the bodies (Nbody,), solar unit
 
         Returns:
-            xcm: positions in the CoM frame (Nstep, Norbit)
-            vcm: velocities in the CoM frame
+            tuple:
+                - xcm: positions in the CoM frame (Nstep, Norbit)
+                - vcm: velocities in the CoM frame
 
     """
     xa, va = jacobi_to_astrocentric(x, v, masses)

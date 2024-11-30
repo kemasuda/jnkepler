@@ -12,12 +12,12 @@ def get_xvast_map(xcm, vcm, pidxarr):
     """astrocentric positions and velocities at transit centers
 
         Args:
-            xcm (Nbody, xyz): center-of-mass positions 
-            vcm (Nbody, xyz): center-of-mass velocities 
-            pidxarr (1D array): array of planet numbers starting from 1
+            xcm: center-of-mass positions (Nbody, xyz)
+            vcm: center-of-mass velocities (Nbody, xyz)
+            pidxarr: array of planet numbers starting from 1 (1D array)
 
         Returns:
-            array (Ntransit, xy): astrocentric positions and velocities at transit centers in the sky plane 
+            array: astrocentric positions and velocities at transit centers in the sky plane (Ntransit, xy)
 
     """
     def xvast_orbit(xcm, vcm, j):

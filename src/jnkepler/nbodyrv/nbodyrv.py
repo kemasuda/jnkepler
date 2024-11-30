@@ -31,7 +31,7 @@ class NbodyRV(Nbody):
                 par_dict: dictionary of input parameters (same as TTVs)
 
             Returns:
-                stellar RVs at times_rvs (m/s), positive when the star is moving away
+                array: stellar RVs at times_rvs (m/s), positive when the star is moving away
 
         """
         xjac0, vjac0, masses = initialize_jacobi_xv(
