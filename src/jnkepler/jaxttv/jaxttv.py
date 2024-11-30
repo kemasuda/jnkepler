@@ -180,7 +180,9 @@ class JaxTTV(Nbody):
 
             Args:
                 par_dict: dict containing parameters
-                transit_orbit_idx: array of idx of the planet (orbit) for each transit times should be evaulated, starting from 0. This must be specified when non-transiting planets exist. If None, all the planets are assuming to be transiting. This is the same as setting transit_orbit_idx = jnp.arange(nplanet).
+                transit_orbit_idx: array of idx of the planet (orbit) for each transit times should be evaulated, starting from 0. \
+                    This must be specified when non-transiting planets exist. \
+                    If None, all the planets are assumed to be transiting. This is the same as setting transit_orbit_idx = jnp.arange(nplanet).
 
             Returns:
                 tuple:
