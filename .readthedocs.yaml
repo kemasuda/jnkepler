@@ -13,7 +13,6 @@ build:
     # nodejs: "16"
   jobs:
     pre_build:
-      - cd ../  # Move to the root directory
       - python setup.py install  # Install your package using setup.py
       - sphinx-apidoc -F -o docs/jnkepler src/jnkepler  # Generate API docs manually before building
       - sphinx-build -b html docs/jnkepler docs/_build/html 
