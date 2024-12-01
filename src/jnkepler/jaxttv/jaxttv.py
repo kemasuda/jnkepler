@@ -441,6 +441,7 @@ class JaxTTV(Nbody):
               (self.dt, de))
 
         dtcheck = self.p_init[0] * dtfrac
+        assert dtcheck < self.dt, "dtcheck is too large compared to original dt: choose smaller dtfrac."
         self2 = deepcopy(self)
         self2.dt = dtcheck
         self2.times = jnp.arange(self2.t_start, self2.t_end, self2.dt)
@@ -512,7 +513,10 @@ class JaxTTV(Nbody):
             tcobslist = self.tcobs
 
         if errorobslist is None:
-            errorobslist = self.errorobs
+            if self.errorobs is not None:
+                errorobslist = self.errorobs
+            else:
+                errorobslist = [np.zeros_like(_t) for _t in tcobslist]
 
         if (t0_lin is None) or (p_lin is None):
             t0_lin, p_lin = self.linear_ephemeris()
