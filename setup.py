@@ -11,7 +11,9 @@ META_PATH = os.path.join("src", "jnkepler", "__init__.py")
 CLASSIFIERS = [
     "Programming Language :: Python",
 ]
-INSTALL_REQUIRES = []
+INSTALL_REQUIRES = ["jax", "numpyro", "pandas", "numpy<2.0",
+                    "matplotlib", "importlib_resources"]
+
 
 # END PROJECT SPECIFIC
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -40,7 +42,7 @@ if __name__ == "__main__":
             ),
             "write_to_template": '__version__ = "{version}"\n',
         },
-        version='0.1.0',
+        version='0.2.0',
         author=find_meta("author"),
         author_email=find_meta("email"),
         maintainer=find_meta("author"),

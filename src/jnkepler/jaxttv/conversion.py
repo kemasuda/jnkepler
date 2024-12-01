@@ -1,5 +1,5 @@
 __all__ = [
-    "reduce_angle", "tic_to_u", "tic_to_m", "elements_to_xv", "xv_to_elements",
+    "reduce_angle", "m_to_u", "tic_to_u", "tic_to_m", "elements_to_xv", "xv_to_elements",
     "jacobi_to_astrocentric", "j2a_map", "astrocentric_to_cm", "a2cm_map", "cm_to_astrocentric",
     "xvjac_to_xvacm", "xvjac_to_xvcm"
 ]
@@ -9,13 +9,13 @@ import jax.numpy as jnp
 from jax import jit, vmap, config
 from jax.lax import scan
 from .markley import get_E
-#from jax.config import config
 config.update('jax_enable_x64', True)
 
 BIG_G = 2.959122082855911e-4
 
+
 def reduce_angle(M):
-    """ get angles between -pi and pi
+    """get angles between -pi and pi
 
         Args:
             M: angle (radian)
@@ -25,13 +25,14 @@ def reduce_angle(M):
 
     """
     return (M + jnp.pi) % (2 * jnp.pi) - jnp.pi
-    #Mmod = M % (2*jnp.pi)
-    #Mred = jnp.where(Mmod >= jnp.pi, Mmod-2*jnp.pi, Mmod)
-    #return Mred
+
+
+def m_to_u(M, ecc):
+    return get_E(reduce_angle(M), ecc)
 
 
 def tic_to_u(tic, period, ecc, omega, t_epoch):
-    """ convert time of inferior conjunction to eccentric anomaly u
+    """convert time of inferior conjunction to eccentric anomaly u
 
         Args:
             tic: time of inferior conjunction
@@ -44,15 +45,18 @@ def tic_to_u(tic, period, ecc, omega, t_epoch):
             eccentric anomaly at t_epoch
 
     """
+    # tic_to_m
     tanw2 = jnp.tan(0.5 * omega)
-    uic = 2 * jnp.arctan( jnp.sqrt((1.-ecc)/(1.+ecc)) * (1.-tanw2)/(1.+tanw2) ) # u at t=tic
-    M_epoch = 2 * jnp.pi / period * (t_epoch - tic) + uic - ecc * jnp.sin(uic) # M at t=0
+    uic = 2 * jnp.arctan(jnp.sqrt((1.-ecc)/(1.+ecc)) *
+                         (1.-tanw2)/(1.+tanw2))  # u at t=tic
+    M_epoch = 2 * jnp.pi / period * \
+        (t_epoch - tic) + uic - ecc * jnp.sin(uic)  # M at t=0
     u_epoch = get_E(reduce_angle(M_epoch), ecc)
     return u_epoch
 
 
 def tic_to_m(tic, period, ecc, omega, t_epoch):
-    """ convert time of inferior conjunction to mean anomaly M_epoch
+    """convert time of inferior conjunction to mean anomaly M_epoch
 
         Args:
             tic: time of inferior conjunction
@@ -66,13 +70,15 @@ def tic_to_m(tic, period, ecc, omega, t_epoch):
 
     """
     tanw2 = jnp.tan(0.5 * omega)
-    uic = 2 * jnp.arctan( jnp.sqrt((1.-ecc)/(1.+ecc)) * (1.-tanw2)/(1.+tanw2) ) # u at t=tic
-    M_epoch = 2 * jnp.pi / period * (t_epoch - tic) + uic - ecc * jnp.sin(uic) # M at t=0
+    uic = 2 * jnp.arctan(jnp.sqrt((1.-ecc)/(1.+ecc)) *
+                         (1.-tanw2)/(1.+tanw2))  # u at t=tic
+    M_epoch = 2 * jnp.pi / period * \
+        (t_epoch - tic) + uic - ecc * jnp.sin(uic)  # M at t=0
     return M_epoch
 
 
 def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
-    """ convert single set of orbital elements to position and velocity
+    """convert single set of orbital elements to position and velocity
 
         Args:
             porb: orbital period (day)
@@ -84,19 +90,23 @@ def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
             mass: mass in Kepler's 3rd law
 
         Returns:
-            xout: positions (xyz, )
-            vout: velocities (xyz, )
+            tuple:
+                - xout: positions (xyz, )
+                - vout: velocities (xyz, )
 
     """
     cosu, sinu = jnp.cos(u), jnp.sin(u)
-    cosw, sinw, cosO, sinO, cosi, sini = jnp.cos(omega), jnp.sin(omega), jnp.cos(lnode), jnp.sin(lnode), jnp.cos(inc), jnp.sin(inc)
+    cosw, sinw, cosO, sinO, cosi, sini = jnp.cos(omega), jnp.sin(
+        omega), jnp.cos(lnode), jnp.sin(lnode), jnp.cos(inc), jnp.sin(inc)
 
     n = 2 * jnp.pi / porb
     na = (n * BIG_G * mass) ** (1./3.)
     R = 1.0 - ecc * cosu
 
-    Pvec = jnp.array([cosw*cosO - sinw*sinO*cosi, cosw*sinO + sinw*cosO*cosi, sinw*sini])
-    Qvec = jnp.array([-sinw*cosO - cosw*sinO*cosi, -sinw*sinO + cosw*cosO*cosi, cosw*sini])
+    Pvec = jnp.array([cosw*cosO - sinw*sinO*cosi, cosw *
+                     sinO + sinw*cosO*cosi, sinw*sini])
+    Qvec = jnp.array([-sinw*cosO - cosw*sinO*cosi, -sinw *
+                     sinO + cosw*cosO*cosi, cosw*sini])
     x, y = cosu - ecc, jnp.sqrt(1.-ecc*ecc) * sinu
     vx, vy = -sinu, jnp.sqrt(1.-ecc*ecc) * cosu
 
@@ -107,21 +117,21 @@ def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
 
 
 def xv_to_elements(x, v, ki):
-    """ convert position/velocity to elements
+    """convert position/velocity to elements
 
         Args:
             x, v: position and velocity (Norbit, xyz)
             ki: 'GM' in Kepler's 3rd law (Norbit); depends on what x/v mean (Jacobi, astrocentric, ...)
 
         Returns:
-            array of
-                semi-major axis (au)
-                orbital period (day)
-                eccentricity
-                inclination (radian)
-                argument of periastron (radian)
-                longitude of ascending node (radian)
-                mean anomaly (radian)
+            array:
+                - semi-major axis (au)
+                - orbital period (day)
+                - eccentricity
+                - inclination (radian)
+                - argument of periastron (radian)
+                - longitude of ascending node (radian)
+                - mean anomaly (radian)
 
     """
     r0 = jnp.sqrt(jnp.sum(x*x, axis=1))
@@ -133,25 +143,27 @@ def xv_to_elements(x, v, ki):
     e = jnp.sqrt(ecosE0**2 + esinE0**2)
     E = jnp.arctan2(esinE0, ecosE0)
 
-    hx = x[:,1] * v[:,2] - x[:,2] * v[:,1]
-    hy = x[:,2] * v[:,0] - x[:,0] * v[:,2]
-    hz = x[:,0] * v[:,1] - x[:,1] * v[:,0]
+    hx = x[:, 1] * v[:, 2] - x[:, 2] * v[:, 1]
+    hy = x[:, 2] * v[:, 0] - x[:, 0] * v[:, 2]
+    hz = x[:, 0] * v[:, 1] - x[:, 1] * v[:, 0]
     hnorm = jnp.sqrt(hx**2 + hy**2 + hz**2)
     inc = jnp.arccos(hz / hnorm)
 
-    P = (jnp.cos(E) / r0)[:,None] * x - (jnp.sqrt(a / ki) * jnp.sin(E))[:,None] * v
-    Q = (jnp.sin(E) / r0 / jnp.sqrt(1 - e*e))[:,None] * x + (jnp.sqrt(a / ki) * (jnp.cos(E)-e) / jnp.sqrt(1 - e*e))[:,None] * v
-    PQz = jnp.sqrt(P[:,2]**2 + Q[:,2]**2)
-    omega = jnp.where(PQz!=0., jnp.arctan2(P[:,2], Q[:,2]), 0.)
-    coslnode = (P[:,0] * Q[:,2] - P[:,2] * Q[:,0]) / PQz
-    sinlnode = (P[:,1] * Q[:,2] - P[:,2] * Q[:,1]) / PQz
-    lnode = jnp.where(PQz!=0., jnp.arctan2(sinlnode, coslnode), 0.)
+    P = (jnp.cos(E) / r0)[:, None] * x - \
+        (jnp.sqrt(a / ki) * jnp.sin(E))[:, None] * v
+    Q = (jnp.sin(E) / r0 / jnp.sqrt(1 - e*e))[:, None] * x + (
+        jnp.sqrt(a / ki) * (jnp.cos(E)-e) / jnp.sqrt(1 - e*e))[:, None] * v
+    PQz = jnp.sqrt(P[:, 2]**2 + Q[:, 2]**2)
+    omega = jnp.where(PQz != 0., jnp.arctan2(P[:, 2], Q[:, 2]), 0.)
+    coslnode = (P[:, 0] * Q[:, 2] - P[:, 2] * Q[:, 0]) / PQz
+    sinlnode = (P[:, 1] * Q[:, 2] - P[:, 2] * Q[:, 1]) / PQz
+    lnode = jnp.where(PQz != 0., jnp.arctan2(sinlnode, coslnode), 0.)
 
     return jnp.array([a, 2*jnp.pi/n, e, inc, omega, lnode, E - esinE0])
 
 
 def jacobi_to_astrocentric(xjac, vjac, masses):
-    """ conversion from Jacobi to astrocentric
+    """conversion from Jacobi to astrocentric
 
         Args:
             xjac: jacobi positions (Norbit, xyz)
@@ -159,20 +171,23 @@ def jacobi_to_astrocentric(xjac, vjac, masses):
             masses: masses of the bodies (Nbody,)
 
         Returns:
-            astrocentric positions and velocities (Norbit, xyz)
+            tuple:
+                - astrocentric positions (Norbit, xyz)
+                - astrocentric velocities (Norbit, xyz)
 
     """
     nbody = len(masses)
-    mmat = jnp.eye(nbody-1) + jnp.tril(jnp.tile(masses[1:] / jnp.cumsum(masses)[1:], (nbody-1,1)), k=-1)
+    mmat = jnp.eye(
+        nbody-1) + jnp.tril(jnp.tile(masses[1:] / jnp.cumsum(masses)[1:], (nbody-1, 1)), k=-1)
     return mmat@xjac, mmat@vjac
 
+
 # map along the 1st axes of xjac, vjac
-j2a_map = vmap(jacobi_to_astrocentric, (0,0,None), 0) # not used?
+j2a_map = vmap(jacobi_to_astrocentric, (0, 0, None), 0)  # not used?
 
 
 def astrocentric_to_cm(xast, vast, masses):
-    """ conversion from astrocentric to CoM
-    note that star is added in the CoM frame.
+    """conversion from astrocentric to CoM
 
         Args:
             xast: astrocentric positions (Norbit, xyz)
@@ -180,55 +195,59 @@ def astrocentric_to_cm(xast, vast, masses):
             masses: masses of the bodies (Nbody,)
 
         Returns:
-            CoM positions and velocities (Nbody, xyz)
+            tuple:
+                - CoM positions (Nbody, xyz); now star (index 0) is added
+                - CoM velocities (Nbody, xyz); now star (index 0) is added
 
     """
     mtot = jnp.sum(masses)
-    xcm_ast = jnp.sum(masses[1:][:,None] * xast, axis=0) / mtot
-    vcm_ast = jnp.sum(masses[1:][:,None] * vast, axis=0) / mtot
+    xcm_ast = jnp.sum(masses[1:][:, None] * xast, axis=0) / mtot
+    vcm_ast = jnp.sum(masses[1:][:, None] * vast, axis=0) / mtot
     xcm = jnp.vstack([-xcm_ast, xast - xcm_ast])
     vcm = jnp.vstack([-vcm_ast, vast - vcm_ast])
     return xcm, vcm
 
+
 # map along the 1st axes of xast, vast
-a2cm_map = vmap(astrocentric_to_cm, (0,0,None), 0)
+a2cm_map = vmap(astrocentric_to_cm, (0, 0, None), 0)
 
 
 def cm_to_astrocentric(x, v, a, j):
-    """ astrocentric x/v/a of the jth orbit (planet) from CoM x/v/a
+    """astrocentric x/v/a of the jth orbit (planet) from CoM x/v/a
 
         Args:
-            x: CoM positions (Nbody, xyz)
-            v: CoM velocities (Nbody, xyz)
-            a: CoM accelerations (Nbody, xyz)
+            x: CoM positions (Nstep, Nbody, xyz)
+            v: CoM velocities (Nstep, Nbody, xyz)
+            a: CoM accelerations (Nstep, Nbody, xyz)
             j: orbit (planet) index
 
         Returns:
-            astrocentric position/velocity/acceleration of jth orbit (planet)
-            (xyz,)
-
+            tuple:
+                - astrocentric position of jth orbit (Nstep, xyz)
+                - astrocentric velocity of jth orbit (Nstep, xyz)
+                - astrocentric acceleration of jth orbit (Nstep, xyz)
 
     """
-    xastj = x[:,j,:] - x[:,0,:]
-    vastj = v[:,j,:] - v[:,0,:]
-    aastj = a[:,j,:] - a[:,0,:]
+    xastj = x[:, j, :] - x[:, 0, :]
+    vastj = v[:, j, :] - v[:, 0, :]
+    aastj = a[:, j, :] - a[:, 0, :]
     return xastj, vastj, aastj
 
 
 def get_acm(x, masses):
-    """ compute acceleration given position, velocity, mass
+    """compute acceleration given position, velocity, mass
 
         Args:
             x: positions in CoM frame (Norbit, xyz)
             masses: masses of the bodies (Nbody)
 
         Returns:
-            a: accelerations (Norbit, xyz)
+            array: accelerations (Norbit, xyz)
 
     """
-    xjk = jnp.transpose(x[:,None] - x[None, :], axes=[0,2,1])
-    x2jk = jnp.sum(xjk * xjk, axis=1)[:,None,:]
-    x2jk = jnp.where(x2jk!=0., x2jk, jnp.inf)
+    xjk = jnp.transpose(x[:, None] - x[None, :], axes=[0, 2, 1])
+    x2jk = jnp.sum(xjk * xjk, axis=1)[:, None, :]
+    x2jk = jnp.where(x2jk != 0., x2jk, jnp.inf)
     x2jkinv = 1. / x2jk
 
     x2jkinv1p5 = x2jkinv * jnp.sqrt(x2jkinv)
@@ -238,22 +257,23 @@ def get_acm(x, masses):
 
     return a
 
+
 # map along the 1st axis of x
-geta_map = vmap(get_acm, (0,None), 0)
+geta_map = vmap(get_acm, (0, None), 0)
 
 
 def xvjac_to_xvacm(x, v, masses):
-    """ Conversion from Jacobi to center-of-mass
-    xv is assumed to be the result of integration: 1st axis is for the times.
+    """Conversion from Jacobi to center-of-mass
 
         Args:
             xv: positions and velocities in Jacobi coordinates (Nstep, x or v, Norbit, xyz)
             masses: masses of the bodies (Nbody,), solar unit
 
         Returns:
-            positions in the CoM frame (Nstep, Norbit)
-            velocities in the CoM frame
-            accelerations in the CoM frame
+            tuple:
+                - xcm: positions in the CoM frame (Nstep, Norbit)
+                - vcm: velocities in the CoM frame
+                - acm: accelerations in the CoM frame
 
     """
     xa, va = jacobi_to_astrocentric(x, v, masses)
@@ -264,16 +284,15 @@ def xvjac_to_xvacm(x, v, masses):
 
 def xvjac_to_xvcm(x, v, masses):
     """ Conversion from Jacobi to center-of-mass
-    xv is assumed to be the result of integration: 1st axis is for the times.
 
         Args:
             xv: positions and velocities in Jacobi coordinates (Nstep, x or v, Norbit, xyz)
             masses: masses of the bodies (Nbody,), solar unit
 
         Returns:
-            positions in the CoM frame (Nstep, Norbit)
-            velocities in the CoM frame
-            accelerations in the CoM frame
+            tuple:
+                - xcm: positions in the CoM frame (Nstep, Norbit)
+                - vcm: velocities in the CoM frame
 
     """
     xa, va = jacobi_to_astrocentric(x, v, masses)

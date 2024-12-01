@@ -1,50 +1,142 @@
+from .symplectic import kepler_step_map
 __all__ = [
     "initialize_jacobi_xv", "get_energy_diff", "get_energy_diff_jac",
-    "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map"
+    "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map", "params_to_dict", "em_to_dict"
 ]
 
 import jax.numpy as jnp
 from jax import jit, vmap, config
-from jax.lax import scan
-from .markley import get_E
-from .conversion import tic_to_u, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
-#from jax.config import config
+from .conversion import m_to_u, tic_to_m, tic_to_u, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
 config.update('jax_enable_x64', True)
 
-#%%
+
 M_earth = 3.0034893e-6
 
 
-def initialize_jacobi_xv(elements, masses, t_epoch):
-    """ compute initial position/velocity from JaxTTV elements
-        here the elements are interpreted as Jacobi using the total interior mass (see Rein & Tamayo 2015)
+def params_to_dict(params, npl, keys):
+    """convert 1D parameter array into parameter dict
 
         Args:
-            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
-            masses: masses of the bodies (Nbody,)
+            parameter array: [arr for key1, arr for key2, ...] where len(arr) is the number of planets
+            npl: number of planets
+            keys: parameter keys [key1, key2, ...]
+
+        Returns:
+            parameter dict
+
+    """
+    pdic = {}
+
+    for i, key in enumerate(keys):
+        pdic[key] = params[i*npl:(i+1)*npl]
+
+    return pdic
+
+
+def em_to_dict(elements, masses):
+    """convert arrays of elements and masses in v0.1.0 to parameter dict
+
+        Note:
+            This function is mainly for running tests; no longer needed for v>=0.2.
+
+        Args:
+            elements: elements (JaxTTV format)
+            masses: masses of star + planets (solar units)
+
+        Returns:
+            parameter dict
+
+    """
+    pdic = {}
+    for k, key in enumerate(["period", "ecosw", "esinw", "cosi", "lnode", "tic"]):
+        pdic[key] = elements[:, k]
+    pdic['pmass'] = masses[1:]
+    return pdic
+
+
+def initialize_jacobi_xv(par_dict, t_epoch):
+    """compute initial position/velocity from parameter dict
+
+        Note:
+            Here the elements are interpreted as Jacobi elements using the total interior mass (see Section 2.2 of Rein & Tamayo 2015).
+
+        Args:
+            par_dict: parameter dictionary that needs to contain
+                - either (ecosw, esinw) or (e, omega)
+                - cosi (set to be 0 if not specified)
+                - lnode (set to be 0 if not specified)
+                - either (time of inferior conjunction) or (mean anomaly)
+                - stellar mass (set to be 1 if not specified), solar unit
+                - either (planetary mass) or (ln planetary mass), solar unit
+
             t_epoch: epoch at which elements are defined
 
         Returns:
-            Jacobi positions and velocities at t_epoch (Norbit, xyz)
+            tuple:
+                - Jacobi positions at t_epoch (Norbit, xyz)
+                - Jacobi velocities at t_epoch (Norbit, xyz)
+                - masses: 1D array of stellar and planetary masses (Nbody,)
 
     """
-    xjac, vjac = [], []
-    for j in range(len(elements)):
-        porb, ecosw, esinw, cosi, lnode, tic = elements[j]
+    keys = par_dict.keys()
+
+    period = par_dict["period"]
+
+    if "ecosw" in keys and "esinw" in keys:
+        ecosw, esinw = par_dict['ecosw'], par_dict['esinw']
         ecc = jnp.sqrt(ecosw**2 + esinw**2)
         omega = jnp.arctan2(esinw, ecosw)
-        inc = jnp.arccos(cosi)
+    elif "ecc" in keys and "omega" in keys:
+        ecc, omega = par_dict["ecc"], par_dict["omega"]
+    else:
+        raise ValueError(
+            "Either (ecosw, esinw) or (ecc, omega) needs to be provided.")
 
-        u = tic_to_u(tic, porb, ecc, omega, t_epoch)
-        xj, vj = elements_to_xv(porb, ecc, inc, omega, lnode, u, jnp.sum(masses[:j+2]))
+    if "cosi" in keys:
+        inc = jnp.arccos(par_dict["cosi"])
+    else:
+        inc = jnp.arccos(period * 0.)
+
+    if "lnode" in keys:
+        lnode = par_dict["lnode"]
+    else:
+        lnode = period * 0.
+
+    if "tic" in keys:
+        ma = tic_to_m(par_dict["tic"], period, ecc, omega, t_epoch)
+    elif "ma" in keys:
+        ma = par_dict["ma"]
+    else:
+        raise ValueError(
+            "Either tic (time of inf. conjunction) or ma (mean anom.) needs to be provided.")
+    u = m_to_u(ma, ecc)  # eccentric anomaly
+
+    if "smass" in keys:
+        smass = par_dict["smass"]
+    else:
+        smass = 1.  # in this case pmass should be considered as planet-to-star mass ratio
+
+    if "pmass" in keys:
+        masses = jnp.hstack([smass, par_dict['pmass']])
+    elif "lnpmass" in keys:
+        masses = jnp.hstack([smass, jnp.exp(par_dict['lnpmass'])])
+    else:
+        raise ValueError(
+            "Either pmass (solar unit) or lnpmass needs to be provided.")
+
+    xjac, vjac = [], []
+    for j in range(len(period)):
+        xj, vj = elements_to_xv(
+            period[j], ecc[j], inc[j], omega[j], lnode[j], u[j], jnp.sum(masses[:j+2]))
         xjac.append(xj)
         vjac.append(vj)
 
-    return jnp.array(xjac), jnp.array(vjac)
+    return jnp.array(xjac), jnp.array(vjac), masses
+
 
 @jit
 def get_energy(x, v, masses):
-    """ compute total energy of the system in CM frame
+    """compute total energy of the system in CM frame
 
         Args:
             x: CM positions (Nbody, xyz)
@@ -56,17 +148,19 @@ def get_energy(x, v, masses):
 
     """
     K = jnp.sum(0.5 * masses * jnp.sum(v*v, axis=1))
-    X = x[:,None] - x[None,:]
-    M = masses[:,None] * masses[None,:]
+    X = x[:, None] - x[None, :]
+    M = masses[:, None] * masses[None, :]
     U = -BIG_G * jnp.sum(M * jnp.tril(1./jnp.sqrt(jnp.sum(X*X, axis=2)), k=-1))
     return K + U
 
+
 # map along the 1st axes of x and v (Nstep)
-get_energy_map = jit(vmap(get_energy, (0,0,None), 0))
+get_energy_map = jit(vmap(get_energy, (0, 0, None), 0))
+
 
 @jit
 def get_energy_diff(xva, masses):
-    """ compute fractional energy change given integration result
+    """compute fractional energy change given integration result
 
         Args:
             xva: posisions, velocities, accelerations in CoM frame (Nstep, x or v or a, Norbit, xyz)
@@ -76,35 +170,14 @@ def get_energy_diff(xva, masses):
             fractional change in total energy
 
     """
-    _xva = jnp.array([xva[0,:,:,:], xva[-1,:,:,:]])
-    etot = get_energy_map(_xva[:,0,:,:], _xva[:,1,:,:], masses)
+    _xva = jnp.array([xva[0, :, :, :], xva[-1, :, :, :]])
+    etot = get_energy_map(_xva[:, 0, :, :], _xva[:, 1, :, :], masses)
     return etot[1]/etot[0] - 1.
 
 
-'''
-@jit
-def get_energy_diff_jac(xvjac, masses):
-    """ compute fractional energy change given integration result
-
-        Args:
-            xvjac: Jacobi posisions and velocities (Nstep, x or v, Norbit, xyz)
-            masses: masses of the bodies (Nbody,)
-
-        Returns:
-            fractional change in total energy
-
-    """
-    _xvjac = jnp.array([xvjac[0], xvjac[-1]])
-    _xcm, _vcm = xvjac_to_xvcm(_xvjac, masses)
-    etot = get_energy_map(_xcm, _vcm, masses)
-    return etot[1]/etot[0] - 1.
-'''
-
-
-from .symplectic import kepler_step_map
 @jit
 def get_energy_diff_jac(xvjac, masses, dt):
-    """ compute fractional energy change given integration result
+    """compute fractional energy change given integration result
 
         Args:
             xvjac: Jacobi posisions and velocities (Nstep, x or v, Norbit, xyz)
@@ -115,14 +188,18 @@ def get_energy_diff_jac(xvjac, masses, dt):
 
     """
     xvjac_ends = jnp.array([xvjac[0], xvjac[-1]])
-    xjac_ends_correct, vjac_ends_correct = kepler_step_map(xvjac_ends[:,0,:,:], xvjac_ends[:,1,:,:], masses, dt)
+    xjac_ends_correct, vjac_ends_correct = kepler_step_map(
+        xvjac_ends[:, 0, :, :], xvjac_ends[:, 1, :, :], masses, dt)
     xcm, vcm = xvjac_to_xvcm(xjac_ends_correct, vjac_ends_correct, masses)
     etot = get_energy_map(xcm, vcm, masses)
     return etot[1]/etot[0] - 1.
 
 
 def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
-    """ convert JaxTTV elements/masses into dictionary
+    """convert JaxTTV elements/masses into dictionary
+
+        Note:
+            This function is for v<0.2.
 
         Args:
             elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
@@ -167,42 +244,43 @@ def elements_to_pdic(elements, masses, outkeys=None, force_coplanar=True):
 
 
 def params_to_elements(params, npl):
-    """ convert JaxTTV parameter array into element and mass arrays
+    """convert JaxTTV parameter array into element and mass arrays
 
         Args:
             params: JaxTTV parameter array
             npl: number of orbits (planets)
 
         Returns:
-            elements: Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
-            masses: masses of the bodies (Nbody,)
+            tuple:
+                - Jacobi orbital elements (period, ecosw, esinw, cosi, \Omega, T_inf_conjunction)
+                - ln(masses) of the bodies (Nbody,)
 
     """
     elements = jnp.array(params[:-npl].reshape(npl, -1))
-    masses = jnp.exp(jnp.hstack([[0], params[-npl:]]))
+    masses = jnp.exp(jnp.hstack([0, params[-npl:]]))
     return elements, masses
 
 
-def convert_elements(elements, masses, t_epoch, WHsplit=False):
-    """ convert JaxTTV elements into more normal sets of parameters
+def convert_elements(par_dict, t_epoch, WHsplit=False):
+    """convert JaxTTV elements into more normal sets of parameters
 
         Args:
-            params: JAX TTV parameter array
-            nplanet: number of orbits (planets)
+            par_dict: parameter dict
             t_epoch: epoch at which elements are defined
             WHsplit: elements are converted to coordinates assuming Wisdom-Holman splitting. This should be True when the output is used for TTVFast.
 
         Returns:
-            (semi-major axis, period, eccentricity, inclination, argument of periastron, longitude of ascending node, mean anomaly) x (orbits)
-
-            angles are in radians
+            tuple:
+                 - array: (semi-major axis, period, eccentricity, inclination, argument of periastron, longitude of ascending node, mean anomaly) x (orbits), angles are in radians
+                 - mass array
 
     """
-    xjac, vjac = initialize_jacobi_xv(elements, masses, t_epoch)
+    xjac, vjac, masses = initialize_jacobi_xv(par_dict, t_epoch)
 
     if WHsplit:
         # for H_Kepler defined in WH splitting (i.e. TTVFast)
-        ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
+        ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / \
+            jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
     else:
         # total interior mass
         ki = BIG_G * jnp.cumsum(masses)[1:]
@@ -211,7 +289,7 @@ def convert_elements(elements, masses, t_epoch, WHsplit=False):
 
 
 def findidx_map(arr1, arr2):
-    """ pick up elements of arr1 nearest to each element in arr2
+    """pick up elements of arr1 nearest to each element in arr2
 
         Args:
             arr1: array from which elements are picked up
@@ -221,6 +299,6 @@ def findidx_map(arr1, arr2):
             indices of arr1 nearest to each element in arr2
 
     """
-    func = lambda arr1, val: jnp.argmin(jnp.abs(arr1 - val))
-    func_map = jit(vmap(func, (None,0), 0))
+    def func(arr1, val): return jnp.argmin(jnp.abs(arr1 - val))
+    func_map = jit(vmap(func, (None, 0), 0))
     return func_map(arr1, arr2)

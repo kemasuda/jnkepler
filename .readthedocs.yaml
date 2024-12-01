@@ -1,0 +1,24 @@
+version: 2
+
+# Dependencies required to build your docs
+python:
+   install:
+   - requirements: docs/requirements.txt
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.10"
+    # You can also specify other tool versions:
+    # nodejs: "16"
+  jobs:
+    pre_build:
+      - python setup.py install  # Install your package using setup.py
+      - sphinx-apidoc -F -o docs/jnkepler src/jnkepler  # Generate API docs manually before building
+      - sphinx-build -b html docs/jnkepler docs/_build/html 
+
+
+# Build documentation in the docs/ directory with Sphinx
+sphinx:
+   configuration: docs/conf.py
+  
