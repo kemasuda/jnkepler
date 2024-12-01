@@ -21,6 +21,8 @@ See [readthedocs](https://jnkepler.readthedocs.io/en/latest/index.html) for more
 
 Explore example notebooks in the `examples/` directory to see `jnkepler` in action:
 
+- **minimal example for computing transit times**: examples/minimal_example.ipynb
+
 - **TTV modeling**: `examples/kep51_ttv_iidnormal.ipynb` 
   - posterior sampling with NUTS
   - reproducing the result in [Libby-Roberts et al. 2020](https://ui.adsabs.harvard.edu/abs/2020AJ....159...57L/abstract)
