@@ -55,7 +55,7 @@ def em_to_dict(elements, masses):
 
 
 def initialize_jacobi_xv(par_dict, t_epoch):
-    """compute initial position/velocity from JaxTTV elements
+    """compute initial position/velocity from parameter dict
 
         Note:
             Here the elements are interpreted as Jacobi elements using the total interior mass (see Section 2.2 of Rein & Tamayo 2015).
