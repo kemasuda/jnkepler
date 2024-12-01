@@ -14,7 +14,11 @@ See [readthedocs](https://jnkepler.readthedocs.io/en/latest/index.html) for more
 
 ## Installation
 
-```python setup.py install```
+```pip install jnkepler```
+
+or 
+
+```python setup.py install``` from source
 
 
 ## Examples
