@@ -1,10 +1,11 @@
 __all__ = ["params_for_ttvfast", "get_ttvfast_model",
-           "get_ttvfast_rv", "get_ttvfast_model_all"]
+           "get_ttvfast_model_rv", "get_ttvfast_model_all"]
 
 import numpy as np
 import pandas as pd
 from jax import jit, vmap
 from .utils import convert_elements
+from ..nbodytransit.nbodytransit import b_to_cosi
 
 
 def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_degrees=True,
@@ -23,6 +24,10 @@ def params_for_ttvfast(samples, t_epoch, num_planets, WHsplit=True, angles_in_de
 
     """
     def func(pdic):
+        if 'b' in pdic.keys() and 'cosi' not in pdic.keys():
+            cosi = b_to_cosi(pdic['b'], pdic['period'], pdic['ecosw'],
+                             pdic['esinw'], pdic['srad'], pdic['smass'])
+            pdic['cosi'] = cosi
         return convert_elements(pdic, t_epoch, WHsplit=WHsplit)
     convert_elements_map = jit(vmap(func, (0,), 0))
     elements, masses = convert_elements_map(samples)
@@ -77,7 +82,7 @@ def get_planets_smass(pdic, num_planets):
         )
         planets.append(planet_tmp)
 
-    return planets, float(pdic.star_mass)
+    return planets, float(pdic['star_mass'])
 
 
 def get_ttvfast_model_rv(pdic, num_planets, t_start, dt, t_end, times_rv, skip_planet_idx=[]):
