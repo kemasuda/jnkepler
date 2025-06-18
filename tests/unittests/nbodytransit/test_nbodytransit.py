@@ -42,6 +42,24 @@ def compute_testlc():
 """
 
 
+def test_get_xvsky_tc():
+    jttv, _, _, pdic = read_testdata_tc()
+    nt = NbodyTransit(jttv.t_start, jttv.t_end, jttv.dt,
+                      jttv.tcobs, jttv.p_init, print_info=False)
+
+    elements = np.loadtxt(path/"tcbug_elements.txt")
+    masses = np.loadtxt(path/"tcbug_masses.txt")
+    par_dict = em_to_dict(elements, masses)
+    par_dict["srad"], par_dict["u1"], par_dict["u2"] = 1., 0.5, 0.2
+    par_dict["radius_ratio"] = jnp.array([0.07, 0.05, 0.1])
+    par_dict["smass"] = 1.
+
+    tc_jttv = jttv.get_transit_times_obs(par_dict)[0]
+    tc = nt.get_xvsky_tc(par_dict)[0]
+
+    assert np.allclose(tc_jttv, tc)
+
+
 @pytest.mark.skipif(not JAXOPLANET_INSTALLED, reason="jaxoplanet is not installed")
 def test_get_flux():
     d = pd.read_csv(path/"kep51_ttv_photodtest.txt", sep="\s+",
@@ -96,5 +114,6 @@ def test_get_flux_and_rv():
 
 if __name__ == '__main__':
     # compute_testlc()
+    test_get_xvsky_tc()
     test_get_flux()
     test_get_flux_and_rv()
