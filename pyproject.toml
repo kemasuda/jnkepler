@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "src/jnkepler/jnkepler_version.py"
+write_to_template = "__version__ = \"{version}\"\n"
+
+[project]
+name = "jnkepler"
+version = "0.2.1" 
+#dynamic = ["version"]
+description = "Differentiable JAX N-body code for modeling nearly-Keplerian orbits"
+authors = [
+    { name = "Kento Masuda", email = "kmasuda@ess.sci.osaka-u.ac.jp" }
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "jax", 
+    "numpyro", 
+    "pandas", 
+    "numpy<2.0",
+    "matplotlib", 
+    "importlib_resources",
+    "astropy"
+]
+
+[project.urls]
+Homepage = "https://github.com/kemasuda/jnkepler"
+Repository = "https://github.com/kemasuda/jnkepler"
+Documentation = "https://github.com/kemasuda/jnkepler"
