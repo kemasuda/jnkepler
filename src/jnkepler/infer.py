@@ -12,6 +12,7 @@ from scipy.stats import norm
 import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+from astropy.stats import knuth_bin_width
 
 
 def optim_svi(numpyro_model, step_size, num_steps, p_initial=None, **kwargs):
@@ -47,7 +48,7 @@ def optim_svi(numpyro_model, step_size, num_steps, p_initial=None, **kwargs):
     return p_fit
 
 
-def fit_t_distribution(y, plot=True, fit_mean=False):
+def fit_t_distribution(y, plot=True, fit_mean=False, save=None, xrange=5):
     """fit Student's t distribution to a sample y
 
         Args:
@@ -106,11 +107,15 @@ def fit_t_distribution(y, plot=True, fit_mean=False):
         ax[0].set_ylabel("CDF")
         ax[0].set_xlabel("residual / assigned error")
         ax[1].set_xlabel("residual / assigned error")
-        ax[1].hist(y, histtype='step', lw=3, alpha=0.6,
+
+        bin_width = knuth_bin_width(y)
+        bins = int(np.ceil((y.max() - y.min()) / bin_width))
+
+        ax[1].hist(y, histtype='step', lw=3, alpha=0.6, bins=bins,
                    density=True, color='gray')
         ymin, ymax = plt.gca().get_ylim()
         ax[1].set_ylim(ymin/5., ymax*1.5)
-        x0 = np.linspace(-5, 5, 100)
+        x0 = np.linspace(-xrange, xrange, 100)
         ax[1].plot(x0, norm(scale=sd).pdf(x0), lw=1, color='C0', ls='dashed',
                    label='normal, $\mathrm{SD}=%.2f$' % sd)
         ax[1].plot(x0, norm.pdf(x0), lw=1, color='C0', ls='dotted',
@@ -129,5 +134,8 @@ def fit_t_distribution(y, plot=True, fit_mean=False):
         ax[0].plot(x0, tdist(loc=mean, scale=np.exp(lnvar*0.5), df=np.exp(lndf)).cdf(x0),
                    label='Student\'s t\n(lndf=%.2f, lnvar=%.2f, mean=%.2f)' % (lndf, lnvar, mean))
         ax[0].legend(loc='upper left', fontsize=14)
+
+        if save is not None:
+            plt.savefig(save+"residual.png", dpi=200, bbox_inches="tight")
 
     return pout
