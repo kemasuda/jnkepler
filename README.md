@@ -2,7 +2,7 @@
 
 *A differentiable N-body model for multi-planet systems.*
 
-`jnkepler` is a Python package for modeling photometric and radial velocity data of multi-planet systems via N-body integration. Built with [JAX](https://jax.readthedocs.io/en/latest/index.html), it leverages automatic differentiation for efficient computation of model gradients. This enables seamless integration with gradient-based optimizers and Hamiltonian Monte Carlo methods, including the No-U-Turn Sampler (NUTS) in [NumPyro](https://num.pyro.ai). The package is particularly suited for efficiently sampling from multi-planet posteriors involving a larger number of parameters and strong degeneracy.
+`jnkepler` is a Python package for modeling photometric and radial velocity data of multi-planet systems via N-body integration. Built with [JAX](https://jax.readthedocs.io/en/latest/index.html), it leverages automatic differentiation for efficient computation of model gradients. This enables seamless integration with gradient-based optimizers and Hamiltonian Monte Carlo methods, including the No-U-Turn Sampler (NUTS) in [NumPyro](https://num.pyro.ai). The package is particularly suited for efficiently sampling from multi-planet posteriors involving a large number of parameters and strong degeneracy.
 
 ## Subpackages
 
@@ -34,8 +34,6 @@ Explore example notebooks in the `examples/` directory to see `jnkepler` in acti
   - SVI optimization & posterior sampling with NUTS
   - noise modeling using Gaussian Process with [`celerite2.jax`](https://celerite2.readthedocs.io/en/latest/api/jax/)
 
-
-
 ## Applications
 
 - TOI-1136: TTV modeling of 6-planets in a resonance chain [[paper]](https://ui.adsabs.harvard.edu/abs/2022arXiv221009283D/abstract)
@@ -44,5 +42,6 @@ Explore example notebooks in the `examples/` directory to see `jnkepler` in acti
 
 ## References
 
-- Masuda et al. (2024), [A Fourth Planet in the Kepler-51 System Revealed by Transit Timing Variations](https://arxiv.org/abs/2410.01625), AJ in press.
+- Masuda et al. (2024), [A Fourth Planet in the Kepler-51 System Revealed by Transit Timing Variations](https://ui.adsabs.harvard.edu/abs/2024AJ....168..294M/abstract), AJ 168, 294
+- Masuda (2025), [jnkepler: Differentiable N-body model for multi-planet systems](https://ui.adsabs.harvard.edu/abs/2025ascl.soft05006M/abstract),  Astrophysics Source Code Library, ascl:2505.006.
 
