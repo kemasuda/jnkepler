@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "setuptools_scm"]
+requires = ["setuptools>=70", "wheel", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
@@ -31,3 +31,6 @@ dependencies = [
 Homepage = "https://github.com/kemasuda/jnkepler"
 Repository = "https://github.com/kemasuda/jnkepler"
 Documentation = "https://github.com/kemasuda/jnkepler"
+
+[tool.setuptools]
+license-files = ["LICENSE"]
