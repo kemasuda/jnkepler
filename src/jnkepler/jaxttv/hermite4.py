@@ -83,10 +83,13 @@ def correct(xp, vp, a1, dota1, a, dota, dt, alpha=7./6.):
                 - corrected velocities
 
     """
-    a02 = (-6 * (a - a1) - 2 * dt * (2 * dota + dota1)) / dt**2
-    a03 = (12 * (a - a1) + 6 * dt * (dota + dota1)) / dt**3
-    xc = xp + (dt**4 / 24.) * (a02 + alpha * a03 * dt / 5.)
-    vc = vp + (dt**3 / 6.) * (a02 + a03 * dt / 4.)
+    S1 = -6.0 * (a - a1) - 2.0 * dt * (2.0 * dota + dota1)
+    S2 =  12.0 * (a - a1) + 6.0 * dt * (       dota + dota1)
+
+    dt2 = dt * dt
+    xc = xp + (dt2 / 24.0) * S1 + (alpha * dt2 / 120.0) * S2
+    vc = vp + (dt  /  6.0) * S1 + (        dt  /  24.0) * S2
+    
     return xc, vc
 
 
