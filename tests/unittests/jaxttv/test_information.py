@@ -9,12 +9,19 @@ path = importlib_resources.files('jnkepler').joinpath('data')
 
 def test_information():
     info_ref = np.loadtxt(path/"info.txt")
+    info_ref_lnpmass = np.load(path/"info_lnpmass.npy")
 
     jttv, _, _, pdic = read_testdata_tc()
     sample_keys = ['ecosw', 'esinw', 'pmass', 'period', 'tic']
     info = information(jttv, pdic, sample_keys)
 
     assert np.allclose(info, info_ref)
+
+    pdic['lnpmass'] = pdic['lnmass']
+    sample_keys = ['ecosw', 'esinw', 'lnpmass', 'period', 'tic']
+    info_lnpmass = information(jttv, pdic, sample_keys)
+
+    assert np.allclose(info_lnpmass, info_ref_lnpmass)
 
 
 def test_information_scale():

@@ -67,7 +67,7 @@ def initialize_jacobi_xv(par_dict, t_epoch):
                 - lnode (set to be 0 if not specified)
                 - either (time of inferior conjunction) or (mean anomaly)
                 - stellar mass (set to be 1 if not specified), solar unit
-                - either (planetary mass) or (ln planetary mass), solar unit
+                - either (planetary mass) or (ln planetary mass), solar unit, former is used when both are provided
 
             t_epoch: epoch at which elements are defined
 

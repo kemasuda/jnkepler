@@ -22,17 +22,24 @@ jobs:
         with:
           python-version: '3.10'
 
-      # install package	  
-      - name: Install dependencies
+      # build package	  
+      - name: Build package
         run: |
           python -m pip install --upgrade pip
-          python setup.py install
+          pip install build setuptools_scm
+          python -m build
 
-      # install pytest
+      # install package
+      - name: Install package for testing
+        run: |
+          pip install dist/*.whl
+
+      # install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pytest
+          pip install jaxoplanet
 
       # pytest -> JUnit xml
       - name: PyTest

@@ -355,11 +355,12 @@ class JaxTTV(Nbody):
             tc_list.append(tcj)
         return tc_list
 
-    def check_residuals(self, par_dict, jitters=None, student=True, normalize_residuals=True, plot=True, fit_mean=False):
+    def check_residuals(self, par_dict=None, tcmodel=None, jitters=None, student=True, normalize_residuals=True, plot=True, fit_mean=False, save=None, xrange=5):
         """check the distribution of residuals, fit them with Student's t distritbution
 
             Args:
                 par_dict: dict containing parameters
+                tcmodel: transit time model (1D array)
 
             Returns:
                 tuple:
@@ -367,8 +368,12 @@ class JaxTTV(Nbody):
                     - dictionary: parameters of Student's t dist (lndf, lnvar, mean)
 
         """
-
-        tc = self.get_transit_times_obs(par_dict)[0]
+        if tcmodel is not None:
+            tc = tcmodel
+        elif par_dict is not None:
+            tc = self.get_transit_times_obs(par_dict)[0]
+        else:
+            raise ValueError("Either par_dict or tcmodel must be provided.")
 
         if jitters is not None:
             jitters = np.atleast_1d(jitters)
@@ -408,7 +413,7 @@ class JaxTTV(Nbody):
             ax[1].set_title("planet %d" % (j+1))
             ax[1].set_xlabel("residual / assigned error")
             ax[1].set_ylabel('frequency (normalized)')
-            x0 = np.linspace(-5, 5, 100)
+            x0 = np.linspace(-xrange, xrange, 100)
             ax[1].plot(x0, np.exp(-0.5*x0**2/sd**2)/np.sqrt(2*np.pi)/sd, lw=1, color='C0',
                        ls='dashed', label='$\mathrm{SD}=%.2f$ (jitter: %.1e)' % (sd, jitters[j]))
             ax[1].legend(loc='lower right')
@@ -419,7 +424,8 @@ class JaxTTV(Nbody):
         # Student's t fit
         res = self.tcobs_flatten - tc
         y = np.array(res / self.errorobs_flatten)
-        params_st = fit_t_distribution(y, plot=plot, fit_mean=fit_mean)
+        params_st = fit_t_distribution(
+            y, plot=plot, fit_mean=fit_mean, save=save, xrange=xrange)
 
         return {'mean': np.mean(res), 'sd': np.std(res)}, params_st
 
@@ -492,7 +498,8 @@ class JaxTTV(Nbody):
 
     def plot_model(self, tcmodellist, tcobslist=None, errorobslist=None, t0_lin=None, p_lin=None,
                    tcmodelunclist=None, tmargin=None, save=None, marker=None, ylims=None, ylims_residual=None,
-                   unit=1440., ylabel='TTV (min)', xlabel='transit time (day)'):
+                   tcmodellist2=None,
+                   unit=1440., lw=1, ylabel='TTV (min)', xlabel='transit time (day)'):
         """plot transit time model
 
             Args:
@@ -501,6 +508,7 @@ class JaxTTV(Nbody):
                 errorobslist: list of the arrays of observed transit time errors for each planet
                 t0_lin, p_lin: linear ephemeris used to show TTVs (n_planet,)
                 tcmodelunclist: model uncertainty (same format as tcmodellist)
+                tcmodellist2 (list of arrays, optional): an optional second set of model transit times to overplot
                 tmargin: margin in x axis
                 save: if not None, plot is saved as "save_planet#.png"
                 marker: marker for model
@@ -539,8 +547,9 @@ class JaxTTV(Nbody):
                         fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
             idxm = tcmodel > 0
             tlin = t0 + tnummodel * p
-            ax.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=1, mfc='white', color='steelblue',
+            ax.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=lw, mfc='white', color='steelblue',
                     zorder=-1000, label='model', alpha=0.9)
+
             if tcmodelunclist is not None:
                 munc = tcmodelunclist[j]
                 ax.fill_between(tcmodel[idxm], (tcmodel-munc-tlin)[idxm]*unit,
@@ -557,6 +566,14 @@ class JaxTTV(Nbody):
             ax2.set_ylabel("residual (min)")
             if ylims_residual is not None and len(ylims_residual) == len(t0_lin):
                 ax2.set_ylim(ylims_residual[j])
+
+            if tcmodellist2 is not None:
+                tcmodel = tcmodellist2[j]
+                tnummodel = np.round((tcmodel - t0)/p).astype(int)
+                idxm = tcmodel > 0
+                tlin = t0 + tnummodel * p
+                ax.plot(tcmodel[idxm], (tcmodel-tlin)[idxm]*unit, '-', marker=marker, lw=lw, mfc='white', color='C1',
+                        zorder=-1000, label='model2', alpha=0.9)
 
             # change legend order
             handles, labels = ax.get_legend_handles_labels()

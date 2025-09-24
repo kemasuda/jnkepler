@@ -12,8 +12,9 @@ def information(jttv, pdic, keys, param_bounds=None):
 
         Args:
             jttv: JaxTTV object
-            pdic: dict containing parameters; keys must contain {ecosw, esinw, period, tic, lnode, cosi} and {mass or lnmass}
+            pdic: dict containing parameters; keys must contain {ecosw, esinw, period, tic, lnode, cosi} and {pmass or lnpmass}
             keys: parameter keys for computing fisher matrix
+            param_bounds: if not None, compute information matrix for parameters scaled by prior widths
 
         Returns:
             information matrix computed as grad.T Sigma_inv grad
@@ -21,12 +22,22 @@ def information(jttv, pdic, keys, param_bounds=None):
     """
     assert set(keys).issubset(
         pdic.keys()), "all keys must be included in pdic.keys()."
+
+    assert ("pmass" in keys) ^ (
+        "lnpmass" in keys), "keys must contain exactly one of 'pmass' or 'lnpmass'."
+
     if param_bounds is not None:
         assert set(keys).issubset(param_bounds.keys()
                                   ), "all keys must be included in param_bounds.keys()."
         print("computing scaled information matrix.")
 
-    def func(p): return jttv.get_transit_times_obs(p)[0]
+    def func(p):
+        if 'lnpmass' in keys:
+            # remove pmass so that it's not used in get_transit_times_obs
+            p_ = {k: v for k, v in p.items() if k != 'pmass'}
+        else:
+            p_ = p
+        return jttv.get_transit_times_obs(p_)[0]
     jacobian_pytree = jacrev(func)(pdic)
     if param_bounds is None:
         jacobian = jnp.hstack([jacobian_pytree[key] for key in keys])
