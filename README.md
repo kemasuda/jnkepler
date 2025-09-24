@@ -34,7 +34,7 @@ os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"
 import jax
 ```
 
-If you forget this, `jnkepler` will issue a warning on import.
+If this is not done, `jnkepler` will issue a warning on import.
 
 
 ## Examples
