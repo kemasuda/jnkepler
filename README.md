@@ -16,7 +16,7 @@ See [readthedocs](https://jnkepler.readthedocs.io/en/latest/index.html) for more
 
 ```pip install jnkepler```
 
-#### *CPU performance note*
+### *CPU performance note*
 
 If you use jnkepler on CPU with JAX ≥0.4.32, the default *thunk runtime* in the CPU backend can make computations much slower, especially when computing gradients. 
 
