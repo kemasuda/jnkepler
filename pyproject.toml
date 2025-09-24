@@ -24,7 +24,8 @@ dependencies = [
     "numpy<2.0",
     "matplotlib", 
     "importlib_resources",
-    "astropy"
+    "astropy",
+    "corner"
 ]
 
 [project.urls]
