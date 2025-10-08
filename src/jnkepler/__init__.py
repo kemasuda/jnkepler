@@ -11,6 +11,7 @@ from . import jaxttv
 from . import nbodytransit
 from . import nbodyrv
 from . import infer
+from . import information
 
 import os
 import warnings

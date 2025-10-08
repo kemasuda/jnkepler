@@ -24,5 +24,7 @@ include src/jnkepler/data/tcs_ttvfast_for_test-obs-nontransiting.txt
 include src/jnkepler/data/tcs_ttvfast_for_test-obs-nontransiting2.txt
 include src/jnkepler/data/tcs_ttvfast_for_test-ttandrv.txt
 include src/jnkepler/data/rvs_ttvfast_for_test-ttandrv.txt
+include src/jnkepler/data/info_unconstrained_ref_lnpmass.npy
+include src/jnkepler/data/info_unconstrained_ref.npy
 
 global-exclude *.py[co]
