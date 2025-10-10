@@ -26,7 +26,8 @@ def _to_unconstrained(model, params_constrained, keys, *model_args, **model_kwar
         *unconstrained* space, suitable for use in inference algorithms
         (e.g., HMC/NUTS).
     """
-    tr = handlers.trace(handlers.seed(model, 0)).get_trace(*model_args, **model_kwargs)
+    tr = handlers.trace(handlers.seed(model, 0)).get_trace(
+        *model_args, **model_kwargs)
     bij = {}
     for name, site in tr.items():
         if site["type"] == "sample" and not site["is_observed"]:
@@ -112,18 +113,18 @@ def information_from_model_iid(
 ):
     """
     Compute Fisher information matrix for iid Gaussian likelihood directly from a NumPyro model,
-    using z = (y - mu(theta)) / sigma (already standardized).
+    using (observed - mu(pdic)) / sigma_sd.
 
     Args:
         model: NumPyro model.
         model_args, model_kwargs: static args/kwargs for the model.
-        pdic: dict of parameter values (either constrained or unconstrained).
+        pdic: dict of parameter values in constrained space.
         mu_name: deterministic site name for the model mean.
         observed: 1D array of observed values; obs_name is used if not provided.
         obs_name: observed site name.
         keys: list of parameter names to differentiate (order preserved).
         sigma_sd: 1D array of standard deviations (SD) for iid noise.
-        param_space: 'constrained' or 'unconstrained'.
+        param_space: 'constrained' or 'unconstrained'; use 'unconstrained' to initialize inverse_mass_matrix.
         rng_key: PRNG key (default = jax.random.PRNGKey(0)).
 
     Returns:
@@ -137,13 +138,14 @@ def information_from_model_iid(
             - "params_unconstrained" (dict[str, jnp.ndarray]): Parameter values in the
               unconstrained space used for differentiation.
     """
-    assert model is not None and pdic is not None and mu_name is not None and keys is not None and sigma_sd is not None 
+    assert model is not None and pdic is not None and mu_name is not None and keys is not None and sigma_sd is not None
     if (observed is None) and (obs_name is None):
         raise ValueError("Either `observed` or `obs_name` must be provided.")
     keys = list(keys)
 
     if param_space == "unconstrained":
-        _pdic = _to_unconstrained(model, pdic, keys, *model_args, **(model_kwargs or {}))
+        _pdic = _to_unconstrained(
+            model, pdic, keys, *model_args, **(model_kwargs or {}))
     elif param_space == "constrained":
         _pdic = dict({k: pdic[k] for k in keys})
     else:
