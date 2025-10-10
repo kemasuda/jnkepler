@@ -1,4 +1,4 @@
-__all__ = ["information_from_model_iid"]
+__all__ = ["information_from_model_independent_normal"]
 
 import jax.numpy as jnp
 import functools
@@ -54,7 +54,7 @@ def _seed_and_substitute(model, params_dict, param_space, rng_key):
     return handlers.seed(substituted, rng_seed=rng_key)
 
 
-def _std_residuals_from_model_iid(
+def _std_residuals_from_model_independent_normal(
     model,
     params_dict,
     param_space,
@@ -68,7 +68,7 @@ def _std_residuals_from_model_iid(
     model_kwargs=None,
 ):
     """
-    Build standardized residuals z = (y - mu(theta)) / sigma for iid Gaussian likelihood.
+    Build standardized residuals z = (y - mu(theta)) / sigma for independent Gaussian likelihood.
     """
     model_kwargs = {} if model_kwargs is None else model_kwargs
     seeded = _seed_and_substitute(model, params_dict, param_space, rng_key)
@@ -97,7 +97,7 @@ def _std_residuals_from_model_iid(
     return (y - mu) / sigma_sd  # (N,)
 
 
-def information_from_model_iid(
+def information_from_model_independent_normal(
     *,
     model=None,
     model_args=(),
@@ -112,7 +112,7 @@ def information_from_model_iid(
     rng_key=None
 ):
     """
-    Compute Fisher information matrix for iid Gaussian likelihood directly from a NumPyro model,
+    Compute Fisher information matrix for independent Gaussian likelihood directly from a NumPyro model,
     using (observed - mu(pdic)) / sigma_sd.
 
     Args:
@@ -160,7 +160,7 @@ def information_from_model_iid(
     def r_fn(p_sub):
         p_all = dict(base)
         p_all.update(p_sub)
-        return _std_residuals_from_model_iid(
+        return _std_residuals_from_model_independent_normal(
             model,
             p_all,
             param_space,
