@@ -6,7 +6,7 @@ __all__ = [
 
 import jax.numpy as jnp
 from jax import jit, vmap, config
-from .conversion import m_to_u, tic_to_m, tic_to_u, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
+from .conversion import m_to_u, tic_to_m, tic_to_u, elements_to_xv, xv_to_elements, G, xvjac_to_xvcm
 config.update('jax_enable_x64', True)
 
 
@@ -150,7 +150,7 @@ def get_energy(x, v, masses):
     K = jnp.sum(0.5 * masses * jnp.sum(v*v, axis=1))
     X = x[:, None] - x[None, :]
     M = masses[:, None] * masses[None, :]
-    U = -BIG_G * jnp.sum(M * jnp.tril(1./jnp.sqrt(jnp.sum(X*X, axis=2)), k=-1))
+    U = -G * jnp.sum(M * jnp.tril(1./jnp.sqrt(jnp.sum(X*X, axis=2)), k=-1))
     return K + U
 
 
@@ -279,11 +279,11 @@ def convert_elements(par_dict, t_epoch, WHsplit=False):
 
     if WHsplit:
         # for H_Kepler defined in WH splitting (i.e. TTVFast)
-        ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / \
+        ki = G * masses[0] * jnp.cumsum(masses)[1:] / \
             jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
     else:
         # total interior mass
-        ki = BIG_G * jnp.cumsum(masses)[1:]
+        ki = G * jnp.cumsum(masses)[1:]
 
     return xv_to_elements(xjac, vjac, ki), masses
 

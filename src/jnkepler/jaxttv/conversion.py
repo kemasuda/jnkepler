@@ -11,7 +11,7 @@ from jax.lax import scan
 from .markley import get_E
 config.update('jax_enable_x64', True)
 
-BIG_G = 2.959122082855911e-4
+G = 2.959122082855911e-4
 
 
 def reduce_angle(M):
@@ -100,7 +100,7 @@ def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
         omega), jnp.cos(lnode), jnp.sin(lnode), jnp.cos(inc), jnp.sin(inc)
 
     n = 2 * jnp.pi / porb
-    na = (n * BIG_G * mass) ** (1./3.)
+    na = (n * G * mass) ** (1./3.)
     R = 1.0 - ecc * cosu
 
     Pvec = jnp.array([cosw*cosO - sinw*sinO*cosi, cosw *
@@ -253,7 +253,7 @@ def get_acm(x, masses):
     x2jkinv1p5 = x2jkinv * jnp.sqrt(x2jkinv)
     Xjk = - xjk * x2jkinv1p5
 
-    a = BIG_G * jnp.dot(Xjk, masses)
+    a = G * jnp.dot(Xjk, masses)
 
     return a
 

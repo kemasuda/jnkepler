@@ -8,7 +8,7 @@ __all__ = [
 import jax.numpy as jnp
 from jax import jit, vmap, grad, config
 from jax.lax import scan
-from .conversion import jacobi_to_astrocentric, BIG_G
+from .conversion import jacobi_to_astrocentric, G
 config.update('jax_enable_x64', True)
 
 
@@ -170,7 +170,7 @@ def integrate_xv(x, v, masses, times, nitr=3):
                 - Jacobi position/velocity array (Nstep, x or v, Norbit, xyz)
 
     """
-    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / \
+    ki = G * masses[0] * jnp.cumsum(masses)[1:] / \
         jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
     dtarr = jnp.diff(times)
 
@@ -204,7 +204,7 @@ def kepler_step_map(xjac, vjac, masses, dt, nitr=3):
             new Jacobi positions and velocities (Ntime, x or v, Norbit, xyz)
 
     """
-    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / \
+    ki = G * masses[0] * jnp.cumsum(masses)[1:] / \
         jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
 
     def step(x, v): return kepler_step(x, v, ki, dt, nitr=nitr)
@@ -225,7 +225,7 @@ def kick_kepler_map(xjac, vjac, masses, dt, nitr=3):
             new jacobi positions and velocities (Ntime, x or v, Norbit, xyz)
 
     """
-    ki = BIG_G * masses[0] * jnp.cumsum(masses)[1:] / \
+    ki = G * masses[0] * jnp.cumsum(masses)[1:] / \
         jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
 
     def kick_kepler(x, v):
