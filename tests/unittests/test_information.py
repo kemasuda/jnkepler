@@ -51,25 +51,25 @@ def test_information_from_model_independent_normal():
         numpyro.sample("obs", dist.Normal(
             loc=tcmodel, scale=tcerrmodel), obs=jttv.tcobs_flatten)
 
-    info_c = information_from_model_independent_normal(model=model_normal, mu_name="tcmodel", pdic=pdic, keys=sample_keys, sigma_sd=jttv.errorobs_flatten, observed=jttv.tcobs_flatten, param_space="constrained",
-                                        model_args=(sample_keys, param_bounds))['fisher']
+    info_c = information_from_model_independent_normal(model=model_normal, mu_name="tcmodel", pdic=pdic, keys=sample_keys, sigma_sd=jttv.errorobs_flatten,
+                                                       observed=jttv.tcobs_flatten, param_space="constrained", model_args=(sample_keys, param_bounds))['fisher']
     info_c_ref = np.loadtxt(path/"info.txt")
     assert np.allclose(info_c, info_c_ref)
 
-    info_u = information_from_model_independent_normal(model=model_normal, mu_name="tcmodel", pdic=pdic, keys=sample_keys, sigma_sd=jttv.errorobs_flatten, observed=jttv.tcobs_flatten, param_space="unconstrained",
-                                        model_args=(sample_keys, param_bounds))['fisher']
+    info_u = information_from_model_independent_normal(model=model_normal, mu_name="tcmodel", pdic=pdic, keys=sample_keys, sigma_sd=jttv.errorobs_flatten,
+                                                       observed=jttv.tcobs_flatten, param_space="unconstrained", model_args=(sample_keys, param_bounds))['fisher']
     info_u_ref = np.load(path/"info_unconstrained_ref.npy")
     assert np.allclose(info_u, info_u_ref)
 
     sample_keys_lnpmass = ["ecosw", "esinw", "lnpmass", "period", "tic"]
     pdic['lnpmass'] = np.log(pdic['pmass'])
-    info_c_lnpmass = information_from_model_independent_normal(model=model_normal, mu_name="tcmodel", pdic=pdic, keys=sample_keys_lnpmass, sigma_sd=jttv.errorobs_flatten, observed=jttv.tcobs_flatten, param_space="constrained",
-                                                model_args=(sample_keys_lnpmass, param_bounds))['fisher']
+    info_c_lnpmass = information_from_model_independent_normal(model=model_normal, mu_name="tcmodel", pdic=pdic, keys=sample_keys_lnpmass,
+                                                               sigma_sd=jttv.errorobs_flatten, observed=jttv.tcobs_flatten, param_space="constrained", model_args=(sample_keys_lnpmass, param_bounds))['fisher']
     info_c_ref_lnpmass = np.load(path/"info_lnpmass.npy")
     assert np.allclose(info_c_lnpmass, info_c_ref_lnpmass)
 
-    info_u_lnpmass = information_from_model_independent_normal(model=model_normal, mu_name="tcmodel", pdic=pdic, keys=sample_keys_lnpmass, sigma_sd=jttv.errorobs_flatten, observed=jttv.tcobs_flatten, param_space="unconstrained",
-                                                model_args=(sample_keys_lnpmass, param_bounds))['fisher']
+    info_u_lnpmass = information_from_model_independent_normal(model=model_normal, mu_name="tcmodel", pdic=pdic, keys=sample_keys_lnpmass,
+                                                               sigma_sd=jttv.errorobs_flatten, observed=jttv.tcobs_flatten, param_space="unconstrained", model_args=(sample_keys_lnpmass, param_bounds))['fisher']
     info_u_ref_lnpmass = np.load(path/"info_unconstrained_ref_lnpmass.npy")
     assert np.allclose(info_u_lnpmass, info_u_ref_lnpmass)
 

@@ -3,7 +3,7 @@ __all__ = ["information_from_model_independent_normal"]
 import jax.numpy as jnp
 import functools
 from collections import OrderedDict
-from jax import jacrev, random
+from jax import jacrev, jacfwd, random
 from numpyro import handlers, infer
 from numpyro.distributions.transforms import biject_to
 
@@ -109,11 +109,12 @@ def information_from_model_independent_normal(
     keys=None,
     sigma_sd=None,
     param_space="unconstrained",
-    rng_key=None
+    rng_key=None,
+    diff_mode="rev",  # "rev" (= jacrev), "fwd" (= jacfwd)
 ):
     """
     Compute Fisher information matrix for independent Gaussian likelihood directly from a NumPyro model,
-    using (observed - mu(pdic)) / sigma_sd.
+    using (observed - mu(pdic)) / sigma_sd obtained from a NumPyro model. 
 
     Args:
         model: NumPyro model.
@@ -126,6 +127,10 @@ def information_from_model_independent_normal(
         sigma_sd: 1D array of standard deviations (SD) for iid noise.
         param_space: 'constrained' or 'unconstrained'; use 'unconstrained' to initialize inverse_mass_matrix.
         rng_key: PRNG key (default = jax.random.PRNGKey(0)).
+        diff_mode: {'rev', 'fwd'} 
+            Differentiation mode for computing the Jacobian.
+            Currently jnkepler doens't work with 'fwd', but it is provided for
+            custom models where forward-mode is compatible. This can be faster when N >> P.
 
     Returns:
         dict: A dictionary containing the Fisher information results and related metadata:
@@ -173,8 +178,16 @@ def information_from_model_independent_normal(
             observed=observed
         )  # (N,)
 
+    # choose differentiation mode
+    if diff_mode == "rev":
+        jac = jacrev
+    elif diff_mode == "fwd":
+        jac = jacfwd
+    else:
+        raise ValueError("diff_mode must be 'rev' or 'fwd'.")
+
     # Jacobian of standardized residuals w.r.t. params (ordered by `keys`)
-    Jtree = jacrev(r_fn)(pdic_sub)
+    Jtree = jac(r_fn)(pdic_sub)
 
     # Stack columns in stable key order; flatten trailing dims per key
     N = Jtree[keys[0]].shape[0]
