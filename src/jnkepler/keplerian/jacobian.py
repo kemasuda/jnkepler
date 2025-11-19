@@ -1,5 +1,6 @@
 __all__ = ["slogdet_jkep_jax", "det_jkep_am",
-           "det_jkep_atau", "det_jkep_pm", "det_jkep_ptau"]
+           "det_jkep_atau", "det_jkep_pm", "det_jkep_ptau",
+           "slogdet_jkep2D_jax", "det_jkep2D_am", "det_jkep2D_pm"]
 
 from jax import jit, jacrev
 from functools import partial
@@ -12,7 +13,7 @@ import jax.numpy as jnp
 def slogdet_jkep_jax(params, keys):
     """
     Compute the Jacobian determinant for the mapping from orbital elements to
-    Cartesian state vectors using JAX autodiff.
+    Cartesian state vectors in the 3D Kepler problem using JAX autodiff 
 
     Args:
         params (dict): Dictionary of orbital-element parameters.
@@ -20,7 +21,7 @@ def slogdet_jkep_jax(params, keys):
             is computed. Only these parameters are differentiated.
             Typical choices correspond to combinations such as
             (a, ecc, inc, lnode, omega, M), (a, ecc, inc, lnode, omega, tau),
-            (period, ecc, inc, lnode, omega, M), etc.
+            (period, ecc, inc, lnode, omega, M).
 
     Returns:
         tuple: (sign, log_abs_det) from `jnp.linalg.slogdet`, where the Jacobian
@@ -50,7 +51,7 @@ def slogdet_jkep_jax(params, keys):
 def det_jkep_am(params):
     """
     Analytic Jacobian determinant for the transformation
-    (a, e, i, Omega, omega, M) → (x, v).
+    (a, e, i, Omega, omega, M) → (x, y, z, vx, vy, vz).
 
     Args:
         params (dict): Orbital-element parameters.
@@ -68,7 +69,7 @@ def det_jkep_am(params):
 def det_jkep_atau(params):
     """
     Analytic Jacobian determinant for the transformation
-    (a, e, i, Omega, omega, tau) → (x, v).
+    (a, e, i, Omega, omega, tau) → (x, y, z, vx, vy, vz).
 
     Args:
         params (dict): Orbital-element parameters.
@@ -85,7 +86,7 @@ def det_jkep_atau(params):
 def det_jkep_pm(params):
     """
     Analytic Jacobian determinant for the transformation
-    (P, e, i, Omega, omega, M) → (x, v).
+    (P, e, i, Omega, omega, M) → (x, y, z, vx, vy, vz).
 
     Args:
         params (dict): Orbital-element parameters.
@@ -101,7 +102,7 @@ def det_jkep_pm(params):
 def det_jkep_ptau(params):
     """
     Analytic Jacobian determinant for the transformation
-    (P, e, i, Omega, omega, tau) → (x, v).
+    (P, e, i, Omega, omega, tau) → (x, y, z, vx, vy, vz).
 
     Args:
         params (dict): Orbital-element parameters.
@@ -112,3 +113,75 @@ def det_jkep_ptau(params):
     det = det_jkep_pm(params)
     n = 2 * jnp.pi / params['period']
     return -n * det
+
+
+@partial(jit, static_argnums=(1,))
+def slogdet_jkep2D_jax(params, keys):
+    """
+    Compute the Jacobian determinant for the mapping from orbital elements to
+    Cartesian state vectors in the 2D Kepler problem using JAX autodiff 
+
+    Args:
+        params (dict): Dictionary of orbital-element parameters.
+        keys (list[str]): Parameter names with respect to which the Jacobian
+            is computed. Only these parameters are differentiated.
+            Typical choices correspond to combinations such as
+            (a, ecc, omega, M), (period, ecc, omega, M).
+
+    Returns:
+        tuple: (sign, log_abs_det) from `jnp.linalg.slogdet`, where the Jacobian
+            is taken with respect to the flattened state vector (x, v).
+    """
+    def func(params):
+        if 'a' in keys:
+            params['period'] = 2 * jnp.pi * \
+                jnp.sqrt(params['a']**3 / G / params['mass'])
+        elif 'n' in keys:
+            params['period'] = 2 * jnp.pi / params['n']
+        if 'M' in keys:
+            params['tau'] = params['t_ref'] - \
+                params['M'] * params['period'] / 2 / jnp.pi
+        out = elements_to_xv(0., params | {'lnode': 0, 'inc': jnp.pi / 2.})
+        return jnp.hstack([out['x'][0][0], out['x'][0][2], out['v'][0][0], out['v'][0][2]])
+
+    exclude = {'lnode', 'inc'}
+    params4 = {k: v for k, v in params.items() if k not in exclude}
+    Jdict = jacrev(func)(params4)
+    Jarr = jnp.stack([Jdict[k].reshape(-1) for k in keys], axis=1)
+
+    return jnp.linalg.slogdet(Jarr)
+
+
+@jit
+def det_jkep2D_am(params):
+    """
+    Analytic Jacobian determinant for the transformation
+    (a, e, omega, M) → (x, z, vx, vz) in the 2D Kepler problem.
+
+    Args:
+        params (dict): Orbital-element parameters.
+
+    Returns:
+        float: Analytic Jacobian determinant.
+    """
+    mu, e = G * params['mass'], params['ecc']
+    det = 0.5 * mu * e / jnp.sqrt(1. - e**2)
+    return det
+
+
+@jit
+def det_jkep2D_pm(params):
+    """
+    Analytic Jacobian determinant for the transformation
+    (P, e, omega, M) → (x, z, vx, vz) in the 2D Kepler problem.
+
+    Args:
+        params (dict): Orbital-element parameters.
+
+    Returns:
+        float: Analytic Jacobian determinant.
+    """
+    mu, p, e = G * params['mass'], params['period'], params['ecc']
+    a_over_p = (mu / p / 4. / jnp.pi**2)**(1./3.)
+    det = (mu / 3.) * e / jnp.sqrt(1. - e**2) * a_over_p
+    return det

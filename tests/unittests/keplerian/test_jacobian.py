@@ -11,6 +11,11 @@ key_sets = {
     "Ptau": ("period", "ecc", "inc", "lnode", "omega", "tau"),
 }
 
+key_sets_2D = {
+    "am":   ("a", "ecc", "omega", "M"),
+    "Pm":   ("period", "ecc", "omega", "M"),
+}
+
 params = dict(
     period=100.,
     ecc=0.2,
@@ -33,14 +38,19 @@ def analytic_det(params, keys):
     if ks == key_sets["am"]:
         return det_jkep_am(params)
     if ks == key_sets["atau"]:
-        if 'period' not in params:
-            P = 2 * jnp.pi * jnp.sqrt(params['a']**3 / (G * params['mass']))
-            params = dict(params, period=P)
         return det_jkep_atau(params)
     if ks == key_sets["Pm"]:
         return det_jkep_pm(params)
     if ks == key_sets["Ptau"]:
         return det_jkep_ptau(params)
+
+
+def analytic_det2D(params, keys):
+    ks = tuple(keys)
+    if ks == key_sets_2D["am"]:
+        return det_jkep2D_am(params)
+    if ks == key_sets_2D["Pm"]:
+        return det_jkep2D_pm(params)
 
 
 def test_det_jkep():
@@ -55,5 +65,18 @@ def test_det_jkep():
         assert np.allclose(logabs_jax, logabs_ana)
 
 
+def test_det_jkep2D():
+    for _, keys in key_sets_2D.items():
+        sign_jax, logabs_jax = slogdet_jkep2D_jax(params, keys)
+
+        det_ana = analytic_det2D(params, keys)
+        sign_ana = jnp.sign(det_ana)
+        logabs_ana = jnp.log(jnp.abs(det_ana) + 1e-300)
+
+        assert np.allclose(sign_jax, sign_ana)
+        assert np.allclose(logabs_jax, logabs_ana)
+
+
 if __name__ == '__main__':
     test_det_jkep()
+    test_det_jkep2D()
