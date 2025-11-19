@@ -1,9 +1,10 @@
 from .symplectic import kepler_step_map
 __all__ = [
     "initialize_jacobi_xv", "get_energy_diff", "get_energy_diff_jac",
-    "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map", "params_to_dict", "em_to_dict"
+    "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map", "params_to_dict", "dict_to_params", "em_to_dict"
 ]
 
+import numpy as np
 import jax.numpy as jnp
 from jax import jit, vmap, config
 from .conversion import m_to_u, tic_to_m, tic_to_u, elements_to_xv, xv_to_elements, BIG_G, xvjac_to_xvcm
@@ -31,6 +32,36 @@ def params_to_dict(params, npl, keys):
         pdic[key] = params[i*npl:(i+1)*npl]
 
     return pdic
+
+
+def dict_to_params(pdic, npl, keys):
+    """
+    Inverse of `params_to_dict` when each value has length `npl`.
+
+    Args:
+        pdic (Mapping[str, array_like]):
+            Parameter dict, e.g. {'a': arr(len=npl), 'b': arr(len=npl), ...}.
+        keys (Sequence[str]):
+            Order of parameters; concatenation follows this order.
+
+    Returns:
+        ndarray or jax.numpy.ndarray:
+            1D parameter array of length len(keys) * npl.
+
+    Raises:
+        KeyError: if a key in `keys` is missing from `pdic`.
+        ValueError: if value lengths are inconsistent across keys.
+    """
+    arrs = []
+    for k in keys:
+        if k not in pdic:
+            raise KeyError(f"Key {k!r} not in pdic.")
+        a = np.asarray(pdic[k]).ravel()
+        if a.size != npl:
+            raise ValueError(f"Length mismatch at {k!r}: {a.size} != {npl}")
+        arrs.append(a)
+    params = np.concatenate(arrs, axis=0)
+    return params
 
 
 def em_to_dict(elements, masses):

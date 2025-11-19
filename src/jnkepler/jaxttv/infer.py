@@ -9,7 +9,7 @@ from scipy.optimize import curve_fit
 from copy import deepcopy
 import time
 import warnings
-from .utils import params_to_dict
+from .utils import params_to_dict, dict_to_params
 
 
 def ttv_default_parameter_bounds(jttv, npl=None, t0_guess=None, p_guess=None, dtic=0.2, dp_frac=1e-2, emax=0.2, mmin=1e-7, mmax=1e-3):
@@ -103,7 +103,7 @@ def ttv_optim_curve_fit(jttv, param_bounds_, p_init=None, jac=False, plot=True, 
         Args:
             jttv: JaxTTV object
             param_bounds: bounds for parameters, 0: lower, 1: upper
-            p_init: initial parameter values (if None, center of lower/upper bounds)
+            p_init: dictionary containing initial parameter values (if None, center of lower/upper bounds)
             jac: if True jacrev(model) is used
             transit_orbit_idx: list of indices to specify which planets are transiting (needed when non-transiting planets are included)
 
@@ -133,6 +133,8 @@ def ttv_optim_curve_fit(jttv, param_bounds_, p_init=None, jac=False, plot=True, 
 
     if p_init is None:
         p_init = 0.499 * params_lower + 0.501 * params_upper
+    else:
+        p_init = dict_to_params(p_init, npl, keys)
 
     def model(p): return jttv.get_transit_times_obs(
         params_to_dict(p, npl, keys), transit_orbit_idx=transit_orbit_idx)[0]
