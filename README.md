@@ -46,9 +46,9 @@ Explore example notebooks in the `examples/` directory to see `jnkepler` in acti
   - plotting TTVs
   - adding a non-transiting planet
 
-- **TTV modeling**: `examples/kep51_ttv_iid-normal.ipynb` 
+- **TTV modeling**: `examples/kep51_ttv_normal.ipynb` 
   - posterior sampling with NUTS
-  - reproducing the result in [Libby-Roberts et al. 2020](https://ui.adsabs.harvard.edu/abs/2020AJ....159...57L/abstract)
+  - reproducing the result in [Libby-Roberts et al. (2020)](https://ui.adsabs.harvard.edu/abs/2020AJ....159...57L/abstract)
 - **Photodynamical modeling**: `examples/kep51_photodynamics_gp.ipynb`
   - SVI optimization & posterior sampling with NUTS
   - noise modeling using Gaussian Process with [`tinygp`](https://tinygp.readthedocs.io/en/stable/)

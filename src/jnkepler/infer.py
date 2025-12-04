@@ -12,7 +12,7 @@ from scipy.stats import norm
 import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
-from astropy.stats import knuth_bin_width
+from scipy import special
 
 
 def optim_svi(numpyro_model, step_size, num_steps, p_initial=None, **kwargs):
@@ -108,7 +108,7 @@ def fit_t_distribution(y, plot=True, fit_mean=False, save=None, xrange=5):
         ax[0].set_xlabel("residual / assigned error")
         ax[1].set_xlabel("residual / assigned error")
 
-        bin_width = knuth_bin_width(y)
+        bin_width = _knuth_bin_width(y)
         bins = int(np.ceil((y.max() - y.min()) / bin_width))
 
         ax[1].hist(y, histtype='step', lw=3, alpha=0.6, bins=bins,
@@ -139,3 +139,72 @@ def fit_t_distribution(y, plot=True, fit_mean=False, save=None, xrange=5):
             plt.savefig(save+"residual.png", dpi=200, bbox_inches="tight")
 
     return pout
+
+
+def _knuth_bin_width(x, Mmax=200, return_bins=False):
+    """
+    Compute optimal histogram bin width using Knuth (2006) rule with a
+    Freedman-Diaconis lower bound.
+
+    The function performs a discrete search over the number of bins
+    M = 1..min(Mmax, N) and selects the value that maximizes the
+    Knuth log-posterior. A Freedman-Diaconis floor ensures a
+    reasonable binning even for pathological distributions.
+
+    Args:
+        x (array_like): 
+            1D input data array. Must be finite and non-empty.
+        Mmax (int, optional): 
+            Maximum number of bins to consider in the Knuth search.
+            Defaults to 200 (or N if smaller).
+        return_bins (bool, optional): 
+            If True, also return the computed bin edges.
+
+    Returns:
+        float or tuple:
+            If `return_bins` is False, returns the optimal bin width (`float`).
+            If `return_bins` is True, returns a tuple `(width, bins)` where:
+                - `width` (`float`): Optimal bin width.
+                - `bins` (`ndarray`): Array of bin edges.
+    """
+    x = np.asarray(x, float).ravel()
+    if x.size == 0 or not np.isfinite(x).all():
+        raise ValueError("x must be finite and non-empty")
+    x.sort()
+    n = x.size
+    xmin, xmax = x[0], x[-1]
+
+    # all identical -> trivial
+    if xmax == xmin:
+        w = 1.0
+        return (w, np.array([xmin - 0.5, xmax + 0.5])) if return_bins else w
+
+    # --- Freedman–Diaconis bins (floor) ---
+    q25, q75 = np.percentile(x, [25, 75])
+    iqr = q75 - q25
+    if iqr <= 0:
+        M_fd = max(1, int(np.sqrt(n)))
+    else:
+        dx_fd = 2.0 * iqr / (n ** (1/3))
+        M_fd = max(1, int(np.ceil((xmax - xmin) / dx_fd))) if dx_fd > 0 else 1
+
+    # --- Knuth discrete search ---
+    Mmax = int(max(1, min(Mmax, n)))
+    best_val, best_M = -np.inf, 1
+    for M in range(1, Mmax + 1):
+        bins = np.linspace(xmin, xmax, M + 1)  # match astropy's choice
+        nk, _ = np.histogram(x, bins=bins)
+        val = (
+            n * np.log(M)
+            + special.gammaln(0.5 * M)
+            - M * special.gammaln(0.5)
+            - special.gammaln(n + 0.5 * M)
+            + np.sum(special.gammaln(nk + 0.5))
+        )
+        if val > best_val:
+            best_val, best_M = val, M
+
+    M = max(best_M, M_fd)
+    bins = np.linspace(xmin, xmax, M + 1)
+    w = bins[1] - bins[0]
+    return (w, bins) if return_bins else w
