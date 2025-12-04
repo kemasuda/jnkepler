@@ -9,7 +9,7 @@ import jax.numpy as jnp
 from jax import jit, vmap, grad, config
 from jax.lax import scan
 from functools import partial
-from .conversion import cm_to_astrocentric, xvjac_to_xvacm, jacobi_to_astrocentric, BIG_G
+from .conversion import cm_to_astrocentric, xvjac_to_xvacm, jacobi_to_astrocentric, G
 from .symplectic import kepler_step_map, kick_kepler_map
 from .hermite4 import hermite4_step_map
 from .utils import findidx_map, get_energy_map
@@ -384,7 +384,7 @@ def find_transit_times_kepler_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=3):
     xast_behind, vast_behind = jacobi_to_astrocentric(
         xjac_behind, vjac_behind, masses)
 
-    kast = BIG_G * (masses[1:] + masses[0])
+    kast = G * (masses[1:] + masses[0])
     kastarr = kast[pidxarr]
 
     tau_ahead = tc_ahead + jnp.diag(find_transit_times_kepler_map(
