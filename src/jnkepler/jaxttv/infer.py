@@ -97,72 +97,154 @@ def unscale_pdic(pdic_scaled, param_bounds):
     return pdic
 
 
-def ttv_optim_curve_fit(jttv, param_bounds_, p_init=None, jac=False, plot=True, save=None, transit_orbit_idx=None):
-    """simple TTV fit using scipy.curve_fit with bounds.
+def ttv_optim_curve_fit(
+    jttv,
+    param_bounds_,
+    pinit=None,
+    n_start=1,
+    loss='linear',
+    jac=False,
+    plot=True,
+    save=None,
+    transit_orbit_idx=None,
+    random_state=None,
+    max_nfev=None,
+):
+    """simple TTV fit using scipy.curve_fit with multiple random starts.
 
-        Args:
-            jttv: JaxTTV object
-            param_bounds: bounds for parameters, 0: lower, 1: upper
-            p_init: dictionary containing initial parameter values (if None, center of lower/upper bounds)
-            jac: if True jacrev(model) is used
-            transit_orbit_idx: list of indices to specify which planets are transiting (needed when non-transiting planets are included)
+    Args:
+        jttv: JaxTTV object
+        param_bounds_: bounds for parameters, dict of {key: (lower, upper)}
+        pinit: initial guess of parameters (dict)
+        n_start: number of random initial guesses
+        loss: determins the loss in scipy.optimize.least_squares. 
+            Using robust loss functions (e.g., 'soft_l1', 'huber') someimtes helps to mitigate the impact of outliers.
+        jac: if True, use jacrev(model) as in single-start version
+        plot: if True, TTV models are plotted with data.
+        save: path to save TTV plots.
+        transit_orbit_idx: list of indices to specify which planets are transiting (needed when non-transiting planets are included)
+        random_state: int or np.random.RandomState, for reproducibility
 
-        Returns:
-            dict: JaxTTV parameter dictionary
-
-        Note:
-            TTV fitting may admit multiple local minima, but this function does not attempt to identify all possible solutions.
-
+    Returns:
+        dict: best-fit JaxTTV parameter dictionary (over all starts)
     """
-    npl = len(param_bounds_['period'][0])
-    if npl != jttv.nplanet:
-        print(f"# {npl-jttv.nplanet} non-transiting planets.")
-        assert len(transit_orbit_idx) == jttv.nplanet
+
     param_bounds = deepcopy(param_bounds_)
 
+    # check non-transiting planets
+    npl = len(param_bounds["period"][0])
+    if npl != jttv.nplanet:
+        print(f"# {npl - jttv.nplanet} non-transiting planets.")
+        assert len(transit_orbit_idx) == jttv.nplanet
+
+    # keys to optimize
     if "cosi" not in param_bounds.keys() or "lnode" not in param_bounds.keys():
         warnings.warn(
-            "Bounds for cosi/lnode not provided: assuming coplanar orbits.")
-        keys = ['period', 'ecosw', 'esinw', 'tic', "lnpmass"]
+            "Bounds for cosi/lnode not provided: assuming coplanar orbits."
+        )
+        keys = ["period", "ecosw", "esinw", "tic", "lnpmass"]
     else:
-        keys = ['period', 'ecosw', 'esinw', 'cosi', 'lnode', 'tic', "lnpmass"]
+        keys = ["period", "ecosw", "esinw", "cosi", "lnode", "tic", "lnpmass"]
+
     params_lower = np.hstack([param_bounds[key][0] for key in keys])
     params_upper = np.hstack([param_bounds[key][1] for key in keys])
-
     bounds = (params_lower, params_upper)
+    ndim = params_lower.size
 
-    if p_init is None:
-        p_init = 0.499 * params_lower + 0.501 * params_upper
+    if isinstance(random_state, np.random.RandomState):
+        rng = random_state
     else:
-        p_init = dict_to_params(p_init, npl, keys)
+        rng = np.random.RandomState(random_state)
 
-    def model(p): return jttv.get_transit_times_obs(
-        params_to_dict(p, npl, keys), transit_orbit_idx=transit_orbit_idx)[0]
+    def model(p_flat):
+        pdic = params_to_dict(p_flat, npl, keys)
+        return jttv.get_transit_times_obs(
+            pdic, transit_orbit_idx=transit_orbit_idx
+        )[0]
+
     func = lambda x, *params: model(jnp.array(params))
 
-    def objective(p):
-        return jnp.sum((model(p) - jttv.tcobs_flatten)**2 / jttv.errorobs_flatten**2)
+    def objective(p_flat):
+        resid = (model(p_flat) - jttv.tcobs_flatten) / jttv.errorobs_flatten
+        return float(jnp.sum(resid**2))
+
     if jac:
         jacmodel = jacrev(model)
         jacfunc = lambda x, *params: jacmodel(jnp.array(params))
     else:
         jacfunc = None
 
-    print("# running least squares optimization...")
-    start_time = time.time()
-    popt, pcov = curve_fit(func, None, jttv.tcobs_flatten, p0=p_init,
-                           sigma=jttv.errorobs_flatten, bounds=bounds, jac=jacfunc)
-    print("# objective function: %.2f --> %.2f (%d data)" %
-          (objective(p_init), objective(popt), len(jttv.tcobs_flatten)))
-    print("# elapsed time: %.1f sec" % (time.time()-start_time))
+    best_popt = None
+    best_obj = np.inf
+    best_pcov = None
 
-    pdic_opt = params_to_dict(popt, npl, keys)
+    print(
+        f"# running least squares optimization (n_start={n_start})...")
+    t0_all = time.time()
+
+    for i in range(n_start):
+        if pinit is not None:
+            p0 = np.hstack([pinit[key] for key in keys])
+        else:
+            if i == 0:
+                p0 = 0.499 * params_lower + 0.501 * params_upper
+            else:
+                # uniform
+                u = rng.rand(ndim)
+                p0 = params_lower + u * (params_upper - params_lower)
+                '''
+                mid = 0.5 * (params_lower + params_upper)
+                width = params_upper - params_lower
+                u = rng.normal(loc=mid, scale=0.1 * width)
+                p0 = np.clip(u, params_lower, params_upper)
+                '''
+
+        t0 = time.time()
+        try:
+            popt, pcov = curve_fit(
+                func,
+                None,
+                jttv.tcobs_flatten,
+                p0=p0,
+                sigma=jttv.errorobs_flatten,
+                bounds=bounds,
+                jac=jacfunc,
+                max_nfev=max_nfev,
+                loss=loss,
+            )
+        except (RuntimeError, ValueError) as e:
+            print(f"#   start {i}: curve_fit failed ({e})")
+            continue
+
+        obj = objective(popt)
+        dt = time.time() - t0
+        print(
+            f"#   start {i}: objective={objective(p0):.2f} --> {obj:.2f}, elapsed={dt:.1f} s")
+
+        if obj < best_obj:
+            best_obj = obj
+            best_popt = popt
+            best_pcov = pcov
+
+    print("# ------------------------------------------------------------")
+    print(
+        "# best objective over all starts: %.2f (%d data)"
+        % (best_obj, len(jttv.tcobs_flatten))
+    )
+    print("# total elapsed time: %.1f sec" % (time.time() - t0_all))
+    print("# ------------------------------------------------------------")
+
+    if best_popt is None:
+        raise RuntimeError("All multi-start fits failed.")
+
+    pdic_opt = params_to_dict(best_popt, npl, keys)
 
     if plot:
         tcall = jttv.get_transit_times_all_list(
-            pdic_opt, transit_orbit_idx=transit_orbit_idx)
-        jttv.plot_model(tcall, marker='.', save=save)
+            pdic_opt, transit_orbit_idx=transit_orbit_idx
+        )
+        jttv.plot_model(tcall, marker=".", save=save)
 
-    pdic_opt['pmass'] = jnp.exp(pdic_opt['lnpmass'])
+    pdic_opt["pmass"] = jnp.exp(pdic_opt["lnpmass"])
 
     return pdic_opt
