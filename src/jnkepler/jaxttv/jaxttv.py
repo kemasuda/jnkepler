@@ -77,7 +77,7 @@ class JaxTTV(Nbody):
         self.transit_time_method = transit_time_method
         self.nitr_transit = nitr_transit
         self.nplanet = nplanet
-        self.p_init = p_init
+        self.p_init = np.asarray(p_init)
         self.tcobs = tcobs
         self.tcobs_flatten = tcobs_flatten
         self.errorobs = errorobs

@@ -9,7 +9,7 @@ __all__ = [
 import jax.numpy as jnp
 from jax import jit, vmap, grad, config
 from jax.lax import scan
-from .conversion import BIG_G
+from .conversion import G
 config.update('jax_enable_x64', True)
 
 
@@ -38,8 +38,8 @@ def get_derivs(x, v, masses):
     Xjk = - xjk * x2jkinv1p5
     dXjk = (- vjk + 3 * xvjk * xjk * x2jkinv) * x2jkinv1p5
 
-    a = BIG_G * jnp.dot(Xjk, masses)
-    adot = BIG_G * jnp.dot(dXjk, masses)
+    a = G * jnp.dot(Xjk, masses)
+    adot = G * jnp.dot(dXjk, masses)
 
     return a, adot
 

@@ -11,6 +11,8 @@ from . import jaxttv
 from . import nbodytransit
 from . import nbodyrv
 from . import infer
+from . import information
+from . import keplerian
 
 import os
 import warnings
@@ -30,4 +32,3 @@ if "--xla_cpu_use_thunk_runtime=false" not in os.environ.get("XLA_FLAGS", ""):
         'Without this, CPU execution may be significantly slower, especially when computing gradients.',
         UserWarning,
     )
-

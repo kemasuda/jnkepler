@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 write_to = "src/jnkepler/jnkepler_version.py"
 write_to_template = "__version__ = \"{version}\"\n"
 local_scheme = "no-local-version"
+version_scheme = "no-guess-dev"
 
 [project]
 name = "jnkepler"
@@ -24,8 +25,8 @@ dependencies = [
     "numpy<2.0",
     "matplotlib", 
     "importlib_resources",
-    "astropy",
-    "corner"
+    "corner",
+    "arviz"
 ]
 
 [project.urls]
