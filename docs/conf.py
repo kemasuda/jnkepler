@@ -2,8 +2,9 @@
 import os
 import sys
 
-# src-layout: RTD/ローカル共通でimport可能にする
+# src-layout
 sys.path.insert(0, os.path.abspath("../src"))
+sys.path.insert(0, os.path.abspath(os.path.expanduser('~/jnkepler')))
 
 project = "jnkepler"
 author = "Kento Masuda"
@@ -17,7 +18,7 @@ extensions = [
     "sphinx.ext.viewcode",
 ]
 
-# バージョンは setuptools_scm が write_to したものを表示
+# version from setuptools_scm
 try:
     from jnkepler.jnkepler_version import __version__
     release = __version__
