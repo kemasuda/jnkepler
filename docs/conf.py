@@ -2,12 +2,9 @@
 import os
 import sys
 
-print("RTD DEBUG: sys.flags.optimize =", sys.flags.optimize)
-print("RTD DEBUG: PYTHONOPTIMIZE =", __import__(
-    "os").environ.get("PYTHONOPTIMIZE"))
-
 # src-layout: RTD/ローカル共通でimport可能にする
 sys.path.insert(0, os.path.abspath("../src"))
+sys.path.insert(0, os.path.abspath(os.path.expanduser('~/jnkepler')))
 
 project = "jnkepler"
 author = "Kento Masuda"
