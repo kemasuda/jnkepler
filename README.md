@@ -10,7 +10,7 @@
 - **jnkepler.nbodytransit**: A differentialble photodynamical model. [`jaxoplanet`](https://jax.exoplanet.codes/en/latest/) needs to be installed for using this package.
 - **jnkepler.nbodyrv**: A differentiable RV model taking into account mutual interactions between planets.
 
-See [readthedocs](https://jnkepler.readthedocs.io/en/latest/index.html) for more details.
+See [readthedocs](https://jnkepler.readthedocs.io/en/stable/) for more details.
 
 ## Installation
 
