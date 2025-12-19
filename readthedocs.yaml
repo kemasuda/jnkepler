@@ -8,6 +8,11 @@ build:
 python:
   install:
     - requirements: docs/requirements.txt
+    - method: pip
+      path: .
+      extra_requirements: []
+      # ↑ extras を作っているなら ["docs"] とかにする
 
 sphinx:
   configuration: docs/conf.py
+
