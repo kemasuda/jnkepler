@@ -22,7 +22,7 @@ dependencies = [
     "jax<7.0", 
     "numpyro", 
     "pandas", 
-    "numpy<2.0",
+    "numpy",
     "matplotlib", 
     "importlib_resources",
     "corner",
