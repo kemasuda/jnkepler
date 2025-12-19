@@ -59,25 +59,24 @@ def radial_velocity_shape_multi(t, params):
 def elements_to_xv(t, params):
     """Convert orbital elements to Cartesian state vectors.
 
-    Args:
-        t : array_like
-            Times (days) at which positions and velocities are evaluated.
-        params : dict
-            Dictionary containing per-orbit orbital elements:
-                - period : orbital period (days)
-                - ecc : eccentricity
-                - inc : inclination (radian)
-                - omega : argument of periastron (radian)
-                - lnode : longitude of ascending node (radian)
-                - tau : time of periastron passage (days)
-                - mass : total mass (solar masses)
+        Args:
+            t (array_like):
+                Times (days) at which positions and velocities are evaluated.
+            params (dict):
+                Dictionary containing per-orbit orbital elements:
+                    - period : orbital period (days)
+                    - ecc : eccentricity
+                    - inc : inclination (radian)
+                    - omega : argument of periastron (radian)
+                    - lnode : longitude of ascending node (radian)
+                    - tau : time of periastron passage (days)
+                    - mass : total mass (solar masses)
 
-    Returns:
-        dict
-            Cartesian position and velocity vectors:
-                - x : array of shape (T, N, 3) if multiple orbits,
-                      or (T, 3) if a single orbit. Units: AU.
-                - v : array of shape (T, N, 3) or (T, 3). Units: AU/day.
+        Returns:
+            dict: 
+                Cartesian position and velocity vectors:
+                    - x : array of shape (T, N, 3) if multiple orbits, or (T, 3) if a single orbit. Units: AU.
+                    - v : array of shape (T, N, 3) or (T, 3). Units: AU/day.
     """
     t = jnp.atleast_1d(t)
     porb = jnp.atleast_1d(params['period'])
@@ -110,23 +109,23 @@ def elements_to_xv(t, params):
 def elements_to_xv_scaled(t, params):
     """Convert orbital elements to state vectors scaled by semi-major axis a.
 
-    Args:
-        t : array_like
-            Times (days) at which positions and velocities are evaluated.
-        params : dict
-            Dictionary containing per-orbit orbital elements:
-                - period : orbital period (days)
-                - ecc : eccentricity
-                - inc : inclination (radian)
-                - omega : argument of periastron (radian)
-                - lnode : longitude of ascending node (radian)
-                - tau : time of periastron passage (days)
+        Args:
+            t (array_like): 
+                Times (days) at which positions and velocities are evaluated.
+            params (dict):
+                Dictionary containing per-orbit orbital elements:
+                    - period : orbital period (days)
+                    - ecc : eccentricity
+                    - inc : inclination (radian)
+                    - omega : argument of periastron (radian)
+                    - lnode : longitude of ascending node (radian)
+                    - tau : time of periastron passage (days)
 
-    Returns:
-        dict
-            Cartesian position and velocity vectors divided by a:
-                - x : array of shape (T, N, 3) or (T, 3). Dimensionless.
-                - v : array of shape (T, N, 3) or (T, 3). Units: 1/day.
+        Returns:
+            dict: 
+                Cartesian position and velocity vectors divided by a:
+                    - x : array of shape (T, N, 3) or (T, 3). Dimensionless.
+                    - v : array of shape (T, N, 3) or (T, 3). Units: 1/day.
     """
     par = params.copy()
     par['mass'] = (2 * jnp.pi / params['period'])**2 / \
