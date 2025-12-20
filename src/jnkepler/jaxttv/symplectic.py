@@ -25,20 +25,25 @@ def dEstep(x, ecosE0, esinE0, dM):
             delta(eccentric anomaly) from single iteration
 
     """
-    x2 = x / 2.0  # x = deltaE
+    x2 = x / 2.0  # x = dE
     sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
-    sx, cx = 2.0*sx2*cx2, cx2*cx2 - sx2*sx2
-    f = x + 2.0*sx2*(sx2*esinE0 - cx2*ecosE0) - dM
-    ecosE = cx*ecosE0 - sx*esinE0
-    fp = 1.0 - ecosE
-    fpp = (sx*ecosE0 + cx*esinE0)/2.0
-    fppp = ecosE/6.0
-    dx = -f/fp
-    dx = -f/(fp + dx*fpp)
-    dx = -f/(fp + dx*(fpp + dx*fppp))
-    return x + dx
 
-# forward: while_loop で dE を解く
+    sx = 2.0 * sx2 * cx2
+    cx = cx2 * cx2 - sx2 * sx2
+
+    f = x + 2.0 * sx2 * (sx2 * esinE0 - cx2 * ecosE0) - dM
+
+    ecosE = cx * ecosE0 - sx * esinE0
+    fp = 1.0 - ecosE
+    fpp = (sx * ecosE0 + cx * esinE0) / 2.0
+    fppp = ecosE / 6.0
+
+    # update (third order)
+    dx = -f / fp
+    dx = -f / (fp + dx * fpp)
+    dx = -f / (fp + dx * (fpp + dx * fppp))
+
+    return x + dx
 
 
 def _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol):
@@ -50,7 +55,6 @@ def _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol):
         cx = cx2 * cx2 - sx2 * sx2
         return dE + (1.0 - cx) * esinE0 - sx * ecosE0 - dM
 
-    # Newton-like update: 既存の dEstep を使う（Halley 風でもOK）
     def newton_update(dE):
         return dEstep(dE, ecosE0, esinE0, dM)
 
@@ -65,7 +69,6 @@ def _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol):
     def body(carry):
         i, dE, _ = carry
         dE_next = newton_update(dE)
-        # 収束判定：ステップ幅（こっちの方が cheap で安定なことが多い）
         err_next = jnp.max(jnp.abs(dE_next - dE))
         return (i + 1, dE_next, err_next)
 
@@ -75,12 +78,33 @@ def _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol):
 
 @partial(custom_vjp, nondiff_argnums=(3, 4))
 def solve_dE(ecosE0, esinE0, dM, max_iter=10, tol=1e-12):
+    """
+    Solve for the eccentric-anomaly increment dE in the Kepler step.
+
+    This function solves the scalar equation F(dE)=0 for dE, where
+        F(dE) = dE + (1 - cos dE) * (e sin E0) - (sin dE) * (e cos E0) - dM.
+
+    Notes:
+        - Uses Newton iterations (up to `max_iter`) with stopping tolerance `tol`.
+        - A custom VJP is provided via implicit differentiation of F(dE)=0, so
+          gradients do not backpropagate through the Newton iterations.
+        - `max_iter` and `tol` are treated as non-differentiable arguments.
+
+    Args:
+        ecosE0: e cos(E0), shape (Norbit,).
+        esinE0: e sin(E0), shape (Norbit,).
+        dM: Mean-anomaly increment n*dt, shape (Norbit,).
+        max_iter: Maximum number of Newton iterations.
+        tol: Convergence tolerance based on |dE_{k+1} - dE_k|.
+
+    Returns:
+        dE: Eccentric-anomaly increment, shape (Norbit,).
+    """
     return _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol)
 
 
 def solve_dE_fwd(ecosE0, esinE0, dM, max_iter=10, tol=1e-12):
     dE = _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol)
-    # backward に必要なのは解 dE とパラメータ primal
     return dE, (dE, ecosE0, esinE0, dM)
 
 
@@ -92,7 +116,6 @@ def solve_dE_bwd(max_iter, tol, res, dE_bar):
     # dF/ddE
     fp = 1.0 + s * esinE0 - c * ecosE0
 
-    # 必要ならガード（まずは無しでOK、問題が出たら入れる）
     # fp = jnp.where(jnp.abs(fp) > 1e-12, fp, jnp.sign(fp) * 1e-12)
 
     ecosE0_bar = dE_bar * (s / fp)
@@ -105,10 +128,17 @@ solve_dE.defvjp(solve_dE_fwd, solve_dE_bwd)
 
 
 def kepler_step(x, v, gm, dt, nitr=10):
-    """Kepler step
+    """Kepler step (two-body drift).
 
-        Note: 
-            currently the number of iterations is fixed at the beginning of itegration; may be replaced with jax.lax.while_loop in future
+        Given Cartesian position/velocity, advance the state by `dt` assuming
+        two-body Keplerian motion under the gravitational parameter `gm`.
+
+        Notes:
+            The eccentric-anomaly increment ``dE`` is obtained by solving a
+            scalar Kepler equation with Newton iterations via `solve_dE`.
+            The argument `nitr` is passed as `max_iter` to `solve_dE`, i.e.,
+            it sets the maximum number of Newton iterations (not an unrolled
+            loop length).
 
         Args:
             x: positions (Norbit, xyz)
@@ -123,28 +153,32 @@ def kepler_step(x, v, gm, dt, nitr=10):
                 - new velocities (Norbit, xyz)
 
     """
-    r0 = jnp.sqrt(jnp.sum(x*x, axis=1))
-    v0s = jnp.sum(v*v, axis=1)
-    u = jnp.sum(x*v, axis=1)
-    a = 1. / (2./r0 - v0s/gm)
-    n = jnp.sqrt(gm / (a*a*a))
-    ecosE0, esinE0 = 1. - r0 / a, u / (n*a*a)
+    r0 = jnp.sqrt(jnp.sum(x * x, axis=1))
+    v0s = jnp.sum(v * v, axis=1)
+    u = jnp.sum(x * v, axis=1)
+
+    a = 1.0 / (2.0 / r0 - v0s / gm)
+    n = jnp.sqrt(gm / (a * a * a))
+
+    ecosE0 = 1.0 - r0 / a
+    esinE0 = u / (n * a * a)
 
     dM = n * dt
 
-    # def step(x, i):
-    #    return dEstep(x, ecosE0, esinE0, dM), None
-    # dE, _ = scan(step, dM, jnp.arange(nitr))
     dE = solve_dE(ecosE0, esinE0, dM, max_iter=nitr, tol=1e-12)
 
-    x2 = dE / 2.
+    x2 = dE / 2.0
     sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
-    f = 1.0 - (a/r0)*2.0*sx2*sx2
-    sx, cx = 2.0*sx2*cx2, cx2*cx2 - sx2*sx2
-    g = (2.0*sx2*(esinE0*sx2 + cx2*r0/a))/n
-    fp = 1.0 - cx*ecosE0 + sx*esinE0
-    fdot = -(a/(r0*fp))*n*sx
-    gdot = (1.0 + g*fdot)/f
+
+    sx = 2.0 * sx2 * cx2
+    cx = cx2 * cx2 - sx2 * sx2
+
+    f = 1.0 - (a / r0) * (2.0 * sx2 * sx2)
+    g = (2.0 * sx2 * (esinE0 * sx2 + cx2 * r0 / a)) / n
+
+    fp = 1.0 - cx * ecosE0 + sx * esinE0
+    fdot = -(a / (r0 * fp)) * n * sx
+    gdot = (1.0 + g * fdot) / f
 
     x_new = f[:, None] * x + g[:, None] * v
     v_new = fdot[:, None] * x + gdot[:, None] * v
@@ -153,7 +187,19 @@ def kepler_step(x, v, gm, dt, nitr=10):
 
 
 def mmat_from_masses(masses):
-    """same mmat as jacobi_to_astrocentric"""
+    """Construct the mass matrix used in the Jacobi-to-astrocentric transform.
+
+    This returns the same lower-triangular mass matrix as used in
+    `jacobi_to_astrocentric`. The matrix depends only on the body masses
+    and is typically used to convert between coordinate conventions.
+
+    Args:
+        masses: Masses of the bodies, shape (Nbody,).
+
+    Returns:
+        mmat: Mass matrix, shape (Nbody-1, Nbody-1).
+
+    """
     nbody = len(masses)
     mp = masses[1:]
     return jnp.eye(nbody - 1) + jnp.tril(
@@ -203,7 +249,6 @@ def Hintgrad(xjac, vjac, masses):
 
     w = (mu[:, None] * mu[None, :]) * inv_d3            # (N,N)
 
-    # IMPORTANT:
     # Because Hint uses -0.5 * sum_{i,j}, the gradient becomes + sum_j mu_i mu_j (x_i-x_j)/r^3
     g_ast_pp = +jnp.sum(w[:, :, None] * diff, axis=1)    # (N,3)
 
