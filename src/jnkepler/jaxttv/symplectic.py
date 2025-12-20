@@ -219,7 +219,7 @@ def nbody_kicks(x, v, ki, masses, dt):
     return x, v + dv
 
 
-def integrate_xv(x, v, masses, times, nitr=3):
+def integrate_xv(x, v, masses, times, nitr=10):
     """symplectic integration of the orbits
 
         Args:
@@ -257,7 +257,7 @@ def integrate_xv(x, v, masses, times, nitr=3):
     return times[1:]+0.5*dtarr[0], xv
 
 
-def kepler_step_map(xjac, vjac, masses, dt, nitr=3):
+def kepler_step_map(xjac, vjac, masses, dt, nitr=10):
     """vmap version of kepler_step; map along the first axis (Ntime)
 
         Args:
@@ -278,7 +278,7 @@ def kepler_step_map(xjac, vjac, masses, dt, nitr=3):
     return step_map(xjac, vjac)
 
 
-def kick_kepler_map(xjac, vjac, masses, dt, nitr=3):
+def kick_kepler_map(xjac, vjac, masses, dt, nitr=10):
     """vmap version of nbody_kicks + kepler_step; map along the first axis (Ntime)
 
         Args:
