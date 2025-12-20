@@ -6,8 +6,9 @@ __all__ = [
 ]
 
 import jax.numpy as jnp
-from jax import jit, vmap, grad, config, checkpoint
-from jax.lax import scan
+from functools import partial 
+from jax import jit, vmap, grad, config, checkpoint, custom_vjp
+from jax.lax import scan, while_loop
 from .conversion import jacobi_to_astrocentric, G
 config.update('jax_enable_x64', True)
 
@@ -37,8 +38,70 @@ def dEstep(x, ecosE0, esinE0, dM):
     dx = -f/(fp + dx*(fpp + dx*fppp))
     return x + dx
 
+# forward: while_loop で dE を解く
+def _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol):
+    def F(dE):
+        x2 = 0.5 * dE
+        sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
+        # sx = sin(dE), cx = cos(dE)
+        sx = 2.0 * sx2 * cx2
+        cx = cx2 * cx2 - sx2 * sx2
+        return dE + (1.0 - cx) * esinE0 - sx * ecosE0 - dM
 
-def kepler_step(x, v, gm, dt, nitr=3):
+    # Newton-like update: 既存の dEstep を使う（Halley 風でもOK）
+    def newton_update(dE):
+        return dEstep(dE, ecosE0, esinE0, dM)
+
+    i0 = jnp.int32(0)
+    dE0 = dM
+    err0 = jnp.array(jnp.inf, dtype=dE0.dtype)
+
+    def cond(carry):
+        i, dE, err = carry
+        return jnp.logical_and(i < max_iter, err > tol)
+
+    def body(carry):
+        i, dE, _ = carry
+        dE_next = newton_update(dE)
+        # 収束判定：ステップ幅（こっちの方が cheap で安定なことが多い）
+        err_next = jnp.max(jnp.abs(dE_next - dE))
+        return (i + 1, dE_next, err_next)
+
+    _, dE, _ = while_loop(cond, body, (i0, dE0, err0))
+    return dE
+
+
+@partial(custom_vjp, nondiff_argnums=(3, 4))
+def solve_dE(ecosE0, esinE0, dM, max_iter=10, tol=1e-12):
+    return _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol)
+
+
+def solve_dE_fwd(ecosE0, esinE0, dM, max_iter=10, tol=1e-12):
+    dE = _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol)
+    # backward に必要なのは解 dE とパラメータ primal
+    return dE, (dE, ecosE0, esinE0, dM)
+
+
+def solve_dE_bwd(max_iter, tol, res, dE_bar):
+    dE, ecosE0, esinE0, dM = res
+
+    # implicit VJP：F(dE; ecosE0, esinE0, dM)=0
+    s, c = jnp.sin(dE), jnp.cos(dE)
+    # dF/ddE
+    fp = 1.0 + s * esinE0 - c * ecosE0
+
+    # 必要ならガード（まずは無しでOK、問題が出たら入れる）
+    # fp = jnp.where(jnp.abs(fp) > 1e-12, fp, jnp.sign(fp) * 1e-12)
+
+    ecosE0_bar = dE_bar * (s / fp)
+    esinE0_bar = dE_bar * (-(1.0 - c) / fp)
+    dM_bar     = dE_bar * (1.0 / fp)
+    return (ecosE0_bar, esinE0_bar, dM_bar)
+
+solve_dE.defvjp(solve_dE_fwd, solve_dE_bwd)
+
+
+def kepler_step(x, v, gm, dt, nitr=10):
     """Kepler step
 
         Note: 
@@ -66,9 +129,10 @@ def kepler_step(x, v, gm, dt, nitr=3):
 
     dM = n * dt
 
-    def step(x, i):
-        return dEstep(x, ecosE0, esinE0, dM), None
-    dE, _ = scan(step, dM, jnp.arange(nitr))
+    #def step(x, i):
+    #    return dEstep(x, ecosE0, esinE0, dM), None
+    #dE, _ = scan(step, dM, jnp.arange(nitr))
+    dE = solve_dE(ecosE0, esinE0, dM, max_iter=nitr, tol=1e-12)
 
     x2 = dE / 2.
     sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
