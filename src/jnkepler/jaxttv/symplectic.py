@@ -8,7 +8,7 @@ __all__ = [
 import jax.numpy as jnp
 from jax import jit, vmap, grad, config, checkpoint
 from jax.lax import scan
-from .conversion import jacobi_to_astrocentric, G
+from .conversion import G
 config.update('jax_enable_x64', True)
 
 
@@ -85,54 +85,62 @@ def kepler_step(x, v, gm, dt, nitr=3):
     return x_new, v_new
 
 
-def Hint(x, v, masses):
-    """interaction Hamiltonian divided by Gm_0m_0
+def mmat_from_masses(masses):
+    """same mmat as jacobi_to_astrocentric"""
+    nbody = len(masses)
+    mp = masses[1:]
+    return jnp.eye(nbody - 1) + jnp.tril(
+        jnp.tile(mp / jnp.cumsum(masses)[1:], (nbody - 1, 1)), k=-1
+    )
 
-        Args:
-            x: positions (Norbit, xyz)
-            v: velocities (Norbit, xyz)
-            masses: masses of the bodies (Nbody,), solar unit
-
-        Returns:
-            value of interaction Hamiltonian
-
+def Hintgrad(xjac, vjac, masses):
     """
-    mu = masses[1:] / masses[0]
-
-    ri = jnp.sqrt(jnp.sum(x * x, axis=1))
-    Hint = jnp.sum(mu / ri)
-
-    xast, vast = jacobi_to_astrocentric(x, v, masses)
-    ri0 = jnp.sqrt(jnp.sum(xast * xast, axis=1))
-    Hint -= jnp.sum(mu / ri0)
-
-    xjk = jnp.transpose(xast[:, None] - xast[None, :], axes=[0, 2, 1])
-    x2jk = jnp.sum(xjk * xjk, axis=1)
-    nzidx = x2jk != 0.
-    x2jk = jnp.where(nzidx, x2jk, 1.)
-    xjkinv = jnp.where(nzidx, jnp.sqrt(1. / x2jk), 0.)
-    Hint -= 0.5 * jnp.sum(mu[:, None] * mu[None, :] * xjkinv)
-
-    return Hint
-
-
-gHint = grad(Hint)  # default to argnums=0
-
-
-def Hintgrad(x, v, masses):
-    """gradient of the interaction Hamiltonian times (star mass / planet mass)
-
-        Args:
-            x: positions (Norbit, xyz)
-            v: velocities (Norbit, xyz)
-            masses: masses of the bodies (Nbody,), solar unit
-
-        Returns:
-            gradient of interaction Hamiltonian x (star mass / planet mass)
-
-
+    Exact analytic replacement for:
+        grad(Hint)(xjac, vjac, masses) * (m0/mi)
+    matching your original Hint definition.
     """
-    return gHint(x, v, masses) * (masses[0] / masses[1:])[:, None]
+    m0 = masses[0]
+    mp = masses[1:]              # (N,)
+    mu = mp / m0                 # (N,)
+    M = mmat_from_masses(masses) # (N,N)
+
+    # ---- term 1: + sum_i mu_i / |xjac_i|  (Jacobi) ----
+    r2 = jnp.sum(xjac * xjac, axis=1)
+    r = jnp.sqrt(r2)
+    inv_r3 = 1.0 / (r2 * r)
+    g_jac = -(mu[:, None] * xjac) * inv_r3[:, None]   # d/dxjac of +sum mu/|x|
+
+    # ---- astrocentric ----
+    xast = M @ xjac
+
+    # term 2: - sum_i mu_i / |xast_i|
+    r2a = jnp.sum(xast * xast, axis=1)
+    ra = jnp.sqrt(r2a)
+    inv_r3a = 1.0 / (r2a * ra)
+    g_ast_sp = +(mu[:, None] * xast) * inv_r3a[:, None]  # d/dxast of (-sum mu/|xast|)
+
+    # term 3: -0.5 * sum_{i,j} mu_i mu_j / |xast_i - xast_j|
+    diff = xast[:, None, :] - xast[None, :, :]           # (N,N,3)
+    d2 = jnp.sum(diff * diff, axis=-1)                   # (N,N)
+    nz = d2 != 0.0
+    d2_safe = jnp.where(nz, d2, 1.0)
+    inv_d3 = jnp.where(nz, 1.0 / (d2_safe * jnp.sqrt(d2_safe)), 0.0)
+
+    w = (mu[:, None] * mu[None, :]) * inv_d3            # (N,N)
+
+    # IMPORTANT:
+    # Because Hint uses -0.5 * sum_{i,j}, the gradient becomes + sum_j mu_i mu_j (x_i-x_j)/r^3
+    g_ast_pp = +jnp.sum(w[:, :, None] * diff, axis=1)    # (N,3)
+
+    g_ast = g_ast_sp + g_ast_pp                          # total dHint/dxast
+
+    # chain rule back to Jacobi: xast = M @ xjac  => dH/dxjac += M^T @ dH/dxast
+    g_from_ast = M.T @ g_ast
+
+    g = g_jac + g_from_ast
+
+    # match your Hintgrad scaling
+    return g * (m0 / mp)[:, None]
 
 
 def nbody_kicks(x, v, ki, masses, dt):
