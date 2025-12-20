@@ -6,7 +6,7 @@ __all__ = [
 ]
 
 import jax.numpy as jnp
-from functools import partial 
+from functools import partial
 from jax import jit, vmap, grad, config, checkpoint, custom_vjp
 from jax.lax import scan, while_loop
 from .conversion import G
@@ -39,6 +39,8 @@ def dEstep(x, ecosE0, esinE0, dM):
     return x + dx
 
 # forward: while_loop で dE を解く
+
+
 def _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol):
     def F(dE):
         x2 = 0.5 * dE
@@ -95,8 +97,9 @@ def solve_dE_bwd(max_iter, tol, res, dE_bar):
 
     ecosE0_bar = dE_bar * (s / fp)
     esinE0_bar = dE_bar * (-(1.0 - c) / fp)
-    dM_bar     = dE_bar * (1.0 / fp)
+    dM_bar = dE_bar * (1.0 / fp)
     return (ecosE0_bar, esinE0_bar, dM_bar)
+
 
 solve_dE.defvjp(solve_dE_fwd, solve_dE_bwd)
 
@@ -129,9 +132,9 @@ def kepler_step(x, v, gm, dt, nitr=10):
 
     dM = n * dt
 
-    #def step(x, i):
+    # def step(x, i):
     #    return dEstep(x, ecosE0, esinE0, dM), None
-    #dE, _ = scan(step, dM, jnp.arange(nitr))
+    # dE, _ = scan(step, dM, jnp.arange(nitr))
     dE = solve_dE(ecosE0, esinE0, dM, max_iter=nitr, tol=1e-12)
 
     x2 = dE / 2.
@@ -149,41 +152,16 @@ def kepler_step(x, v, gm, dt, nitr=10):
     return x_new, v_new
 
 
-def Hint(x, v, masses):
-    """interaction Hamiltonian divided by Gm_0m_0
-
-        Args:
-            x: positions (Norbit, xyz)
-            v: velocities (Norbit, xyz)
-            masses: masses of the bodies (Nbody,), solar unit
-
-        Returns:
-            value of interaction Hamiltonian
-
-    """
-    mu = masses[1:] / masses[0]
-
-    ri = jnp.sqrt(jnp.sum(x * x, axis=1))
-    Hint = jnp.sum(mu / ri)
-
-    xast, vast = jacobi_to_astrocentric(x, v, masses)
-    ri0 = jnp.sqrt(jnp.sum(xast * xast, axis=1))
-    Hint -= jnp.sum(mu / ri0)
-
-    xjk = jnp.transpose(xast[:, None] - xast[None, :], axes=[0, 2, 1])
-    x2jk = jnp.sum(xjk * xjk, axis=1)
-    nzidx = x2jk != 0.
-    x2jk = jnp.where(nzidx, x2jk, 1.)
-    xjkinv = jnp.where(nzidx, jnp.sqrt(1. / x2jk), 0.)
-    Hint -= 0.5 * jnp.sum(mu[:, None] * mu[None, :] * xjkinv)
-
-    return Hint
+def mmat_from_masses(masses):
+    """same mmat as jacobi_to_astrocentric"""
+    nbody = len(masses)
+    mp = masses[1:]
+    return jnp.eye(nbody - 1) + jnp.tril(
+        jnp.tile(mp / jnp.cumsum(masses)[1:], (nbody - 1, 1)), k=-1
+    )
 
 
-gHint = grad(Hint)  # default to argnums=0
-
-
-def Hintgrad(x, v, masses):
+def Hintgrad(xjac, vjac, masses):
     """gradient of the interaction Hamiltonian times (star mass / planet mass)
 
         Args:
@@ -194,9 +172,50 @@ def Hintgrad(x, v, masses):
         Returns:
             gradient of interaction Hamiltonian x (star mass / planet mass)
 
-
     """
-    return gHint(x, v, masses) * (masses[0] / masses[1:])[:, None]
+    m0 = masses[0]
+    mp = masses[1:]              # (N,)
+    mu = mp / m0                 # (N,)
+    M = mmat_from_masses(masses)  # (N,N)
+
+    # ---- term 1: + sum_i mu_i / |xjac_i|  (Jacobi) ----
+    r2 = jnp.sum(xjac * xjac, axis=1)
+    r = jnp.sqrt(r2)
+    inv_r3 = 1.0 / (r2 * r)
+    g_jac = -(mu[:, None] * xjac) * inv_r3[:, None]   # d/dxjac of +sum mu/|x|
+
+    # ---- astrocentric ----
+    xast = M @ xjac
+
+    # term 2: - sum_i mu_i / |xast_i|
+    r2a = jnp.sum(xast * xast, axis=1)
+    ra = jnp.sqrt(r2a)
+    inv_r3a = 1.0 / (r2a * ra)
+    # d/dxast of (-sum mu/|xast|)
+    g_ast_sp = +(mu[:, None] * xast) * inv_r3a[:, None]
+
+    # term 3: -0.5 * sum_{i,j} mu_i mu_j / |xast_i - xast_j|
+    diff = xast[:, None, :] - xast[None, :, :]           # (N,N,3)
+    d2 = jnp.sum(diff * diff, axis=-1)                   # (N,N)
+    nz = d2 != 0.0
+    d2_safe = jnp.where(nz, d2, 1.0)
+    inv_d3 = jnp.where(nz, 1.0 / (d2_safe * jnp.sqrt(d2_safe)), 0.0)
+
+    w = (mu[:, None] * mu[None, :]) * inv_d3            # (N,N)
+
+    # IMPORTANT:
+    # Because Hint uses -0.5 * sum_{i,j}, the gradient becomes + sum_j mu_i mu_j (x_i-x_j)/r^3
+    g_ast_pp = +jnp.sum(w[:, :, None] * diff, axis=1)    # (N,3)
+
+    g_ast = g_ast_sp + g_ast_pp                          # total dHint/dxast
+
+    # chain rule back to Jacobi: xast = M @ xjac  => dH/dxjac += M^T @ dH/dxast
+    g_from_ast = M.T @ g_ast
+
+    g = g_jac + g_from_ast
+
+    # match your Hintgrad scaling
+    return g * (m0 / mp)[:, None]
 
 
 def nbody_kicks(x, v, ki, masses, dt):
@@ -249,7 +268,7 @@ def integrate_xv(x, v, masses, times, nitr=10):
         x, v = nbody_kicks(x, v, ki, masses, dt)
         xout, vout = kepler_step(x, v, ki, dt, nitr=nitr)
         return [xout, vout], jnp.array([xout, vout])
-    
+
     step = checkpoint(step)
 
     _, xv = scan(step, [x, v], dtarr)
