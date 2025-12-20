@@ -6,7 +6,7 @@ __all__ = [
 ]
 
 import jax.numpy as jnp
-from jax import jit, vmap, grad, config
+from jax import jit, vmap, grad, config, checkpoint
 from jax.lax import scan
 from functools import partial
 from .conversion import cm_to_astrocentric, xvjac_to_xvacm, jacobi_to_astrocentric, G
@@ -187,6 +187,8 @@ def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
         atc = jnp.transpose(atc, axes=[2, 0, 1])
         step = get_nrstep_map(xtc, vtc, atc, pidxarr)
         return [xtc, vtc, step], step
+    
+    tcstep = checkpoint(tcstep)
 
     _, steps = scan(tcstep, [xcm_init, vcm_init,
                     nrstep_init], jnp.arange(nitr))
@@ -234,6 +236,8 @@ def find_transit_params_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
         atc = jnp.transpose(atc, axes=[2, 0, 1])
         step = get_nrstep_map(xtc, vtc, atc, pidxarr)
         return [xtc, vtc, step], step
+    
+    tcstep = checkpoint(tcstep)
 
     xvs, steps = scan(tcstep, [xcm_init, vcm_init,
                       nrstep_init], jnp.arange(nitr))
