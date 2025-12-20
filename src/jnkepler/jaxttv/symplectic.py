@@ -259,7 +259,7 @@ def Hintgrad(xjac, vjac, masses):
 
     g = g_jac + g_from_ast
 
-    # match your Hintgrad scaling
+    # correct scaling
     return g * (m0 / mp)[:, None]
 
 
