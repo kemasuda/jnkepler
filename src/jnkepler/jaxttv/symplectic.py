@@ -6,7 +6,7 @@ __all__ = [
 ]
 
 import jax.numpy as jnp
-from jax import jit, vmap, grad, config
+from jax import jit, vmap, grad, config, checkpoint
 from jax.lax import scan
 from .conversion import jacobi_to_astrocentric, G
 config.update('jax_enable_x64', True)
@@ -185,6 +185,8 @@ def integrate_xv(x, v, masses, times, nitr=3):
         x, v = nbody_kicks(x, v, ki, masses, dt)
         xout, vout = kepler_step(x, v, ki, dt, nitr=nitr)
         return [xout, vout], jnp.array([xout, vout])
+    
+    step = checkpoint(step)
 
     _, xv = scan(step, [x, v], dtarr)
 
