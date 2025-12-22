@@ -1,4 +1,4 @@
-""" routines for finding transit times
+"""Routines for finding transit times.
 """
 __all__ = [
     "find_transit_times_single", "find_transit_times_all", "find_transit_params_all",

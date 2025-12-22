@@ -1,3 +1,4 @@
+"""Coordinate transformations and orbital-element utilities."""
 __all__ = [
     "reduce_angle", "m_to_u", "tic_to_u", "tic_to_m", "elements_to_xv", "xv_to_elements",
     "jacobi_to_astrocentric", "j2a_map", "astrocentric_to_cm", "a2cm_map", "cm_to_astrocentric",
