@@ -1,6 +1,9 @@
-""" symplectic integrator
-much borrowed from TTVFast https://github.com/kdeck/TTVFast
 """
+Symplectic integrator.
+
+JAX-native implementation following the symplectic approach used in TTVFast (https://github.com/kdeck/TTVFast).
+"""
+
 __all__ = [
     "integrate_xv", "kepler_step_map", "kick_kepler_map"
 ]
@@ -22,7 +25,7 @@ def dEstep(x, ecosE0, esinE0, dM):
             dM: delta(mean anomaly)
 
         Returns:
-            delta(eccentric anomaly) from single iteration
+            dE: updated estimate for delta(eccentric anomaly)
 
     """
     x2 = x / 2.0  # x = dE
@@ -47,13 +50,6 @@ def dEstep(x, ecosE0, esinE0, dM):
 
 
 def _solve_dE_while(ecosE0, esinE0, dM, max_iter, tol):
-    def F(dE):
-        x2 = 0.5 * dE
-        sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
-        # sx = sin(dE), cx = cos(dE)
-        sx = 2.0 * sx2 * cx2
-        cx = cx2 * cx2 - sx2 * sx2
-        return dE + (1.0 - cx) * esinE0 - sx * ecosE0 - dM
 
     def newton_update(dE):
         return dEstep(dE, ecosE0, esinE0, dM)
@@ -145,7 +141,7 @@ def kepler_step(x, v, gm, dt, nitr=10):
             v: velocities (Norbit, xyz)
             gm: 'GM' in Kepler's 3rd law
             dt: time step
-            nitr: number of iterations (currently needs to be fixed)
+            nitr: maximum number of Newton iterations
 
         Returns:
             tuple:
@@ -305,7 +301,7 @@ def integrate_xv(x, v, masses, times, nitr=10):
     # transformation between the mapping and real Hamiltonian
     x, v = real_to_mapTO(x, v, ki, masses, dtarr[0])
     # dt/2 ahead of the starting time
-    x, v = kepler_step(x, v, ki, dtarr[0]*0.5, nitr=nitr)
+    x, v = kepler_step(x, v, ki, dtarr[0] * 0.5, nitr=nitr)
 
     # advance the system by dt
     def step(xvin, dt):
@@ -318,7 +314,7 @@ def integrate_xv(x, v, masses, times, nitr=10):
 
     _, xv = scan(step, [x, v], dtarr)
 
-    return times[1:]+0.5*dtarr[0], xv
+    return times[1:] + 0.5 * dtarr[0], xv
 
 
 def kepler_step_map(xjac, vjac, masses, dt, nitr=10):
