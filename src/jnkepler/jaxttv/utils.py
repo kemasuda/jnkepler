@@ -1,4 +1,6 @@
-from .symplectic import kepler_step_map
+"""
+Internal utilities for parameter conversion, initialization, and diagnostics.
+"""
 __all__ = [
     "initialize_jacobi_xv", "get_energy_diff", "get_energy_diff_jac",
     "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map", "params_to_dict", "dict_to_params", "em_to_dict"
@@ -7,6 +9,7 @@ __all__ = [
 import numpy as np
 import jax.numpy as jnp
 from jax import jit, vmap, config
+from .symplectic import kepler_step_map
 from .conversion import m_to_u, tic_to_m, tic_to_u, elements_to_xv, xv_to_elements, G, xvjac_to_xvcm
 config.update('jax_enable_x64', True)
 
