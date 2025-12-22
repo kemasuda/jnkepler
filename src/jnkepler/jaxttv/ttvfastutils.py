@@ -1,3 +1,10 @@
+"""
+Utilities for interfacing with TTVFast models.
+
+This module provides helper functions for constructing TTVFast-compatible parameter sets and model objects. 
+These functions are intended solely for comparison, validation, and conversion purposes, and
+are not used in the core JAX-based modeling or inference pipelines.
+"""
 __all__ = ["params_for_ttvfast", "get_ttvfast_model",
            "get_ttvfast_model_rv", "get_ttvfast_model_all"]
 

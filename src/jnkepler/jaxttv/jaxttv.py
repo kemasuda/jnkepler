@@ -1,3 +1,4 @@
+"""Main class for modeling TTVs."""
 __all__ = ["Nbody", "JaxTTV"]
 
 
