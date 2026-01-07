@@ -45,10 +45,12 @@ Explore example notebooks in the `examples/` directory to see `jnkepler` in acti
   - computing transit times and RVs
   - plotting TTVs
   - adding a non-transiting planet
-
-- **TTV modeling**: `examples/kep51_ttv_normal.ipynb` 
+- **TTV modeling** (normal likelihood): `examples/kep51_ttv_normal.ipynb` 
   - posterior sampling with NUTS
   - reproducing the result in [Libby-Roberts et al. (2020)](https://ui.adsabs.harvard.edu/abs/2020AJ....159...57L/abstract)
+- **TTV modeling** (Student's t likelihood):
+  - `examples/v1298tau_ttv_student.ipynb`: reproducing the analysis in [Livingston et al. (2026)](https://www.nature.com/articles/s41586-025-09840-z)
+
 - **Photodynamical modeling**: `examples/kep51_photodynamics_gp.ipynb`
   - SVI optimization & posterior sampling with NUTS
   - noise modeling using Gaussian Process with [`tinygp`](https://tinygp.readthedocs.io/en/stable/)
@@ -56,9 +58,11 @@ Explore example notebooks in the `examples/` directory to see `jnkepler` in acti
 ## Applications
 
 - TOI-1136: TTV modeling of 6-planets in a resonance chain [[paper]](https://ui.adsabs.harvard.edu/abs/2022arXiv221009283D/abstract)
-- TOI-2015: joint TTV & RV modeling of a two-planet system [[paper]](https://arxiv.org/abs/2310.11775)
-- Kepler-51: four-planet modeling including JWST data [[paper]](https://arxiv.org/abs/2410.01625) [[repository]](https://github.com/kemasuda/kep51_jwst)
+- TOI-2015: Joint TTV & RV modeling of a two-planet system [[paper]](https://arxiv.org/abs/2310.11775)
+- Kepler-51: Four-planet modeling including JWST data [[paper]](https://arxiv.org/abs/2410.01625) [[repository]](https://github.com/kemasuda/kep51_jwst)
 - K2-19: TTVs confirm 3:2 resonance [[paper]](https://arxiv.org/abs/2509.18031)
+- TOI-4495: Photodynamical modeling of a pair of near-resonant sub-Neptunes [[paper]](https://arxiv.org/abs/2601.02665) [[repository]](https://github.com/kemasuda/toi4495-ttv)
+- V1298 Tau: Four low-density planets transiting a young star [[paper]](https://www.nature.com/articles/s41586-025-09840-z) [[repository]](https://github.com/kemasuda/v1298tau-ttv); see also `examples/v1298tau_ttv_student.ipynb` in this repo
 
 ## References
 
