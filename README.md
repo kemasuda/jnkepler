@@ -50,7 +50,8 @@ Explore example notebooks in the `examples/` directory to see `jnkepler` in acti
   - reproducing the result in [Libby-Roberts et al. (2020)](https://ui.adsabs.harvard.edu/abs/2020AJ....159...57L/abstract)
 - **TTV modeling** (Student's t likelihood):
   - `examples/v1298tau_ttv_student.ipynb`: reproducing the analysis in [Livingston et al. (2026)](https://www.nature.com/articles/s41586-025-09840-z)
-
+  - `examples/trappist-1_ttv_student.ipynb`: reproducing the analysis in [Agol et al. (2021)](https://iopscience.iop.org/article/10.3847/PSJ/abd022)
+  
 - **Photodynamical modeling**: `examples/kep51_photodynamics_gp.ipynb`
   - SVI optimization & posterior sampling with NUTS
   - noise modeling using Gaussian Process with [`tinygp`](https://tinygp.readthedocs.io/en/stable/)
