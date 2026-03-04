@@ -18,7 +18,7 @@ See [readthedocs](https://jnkepler.readthedocs.io/en/stable/) for more details.
 
 ### *CPU performance note*
 
-If you use jnkepler on CPU with JAX ≥0.4.32, the default *thunk runtime* in the CPU backend can make computations much slower, especially when computing gradients. 
+If you use jnkepler on CPU with JAX ≥ 0.4.32, the default *thunk runtime* in the CPU backend can make computations much slower, especially when computing gradients. 
 
 To avoid this, disable the thunk runtime by setting the following environment variable **before importing jax**:
 
@@ -34,8 +34,8 @@ os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"
 import jax
 ```
 
-This workaround is intended for **JAX < 0.7**; this is why `jnkepler` currently requires `jax<0.7`.
 If this is not done, `jnkepler` will issue a warning on import.
+**Please note that this workaround is intended for JAX < 0.7**; this is why `jnkepler` currently requires `jax<0.7`.
 
 
 ## Examples
