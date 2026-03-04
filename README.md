@@ -34,6 +34,7 @@ os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"
 import jax
 ```
 
+This workaround is intended for **JAX < 0.7**; this is why `jnkepler` currently requires `jax<0.7`.
 If this is not done, `jnkepler` will issue a warning on import.
 
 
