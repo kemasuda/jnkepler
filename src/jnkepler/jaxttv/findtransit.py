@@ -1,80 +1,18 @@
 """Routines for finding transit times.
 """
 __all__ = [
-    "find_transit_times_single", "find_transit_times_all", "find_transit_params_all",
+    "find_transit_times_all", "find_transit_params_all",
     "find_transit_times_kepler_all"
 ]
 
 import jax.numpy as jnp
-from jax import jit, vmap, grad, config, checkpoint
+from jax import vmap, config, checkpoint
 from jax.lax import scan
-from functools import partial
-from .conversion import cm_to_astrocentric, xvjac_to_xvacm, jacobi_to_astrocentric, G
+from .conversion import xvjac_to_xvacm, jacobi_to_astrocentric, G
 from .symplectic import kepler_step_map, kick_kepler_map
 from .hermite4 import hermite4_step_map
-from .utils import findidx_map, get_energy_map
+from .utils import findidx_map
 config.update('jax_enable_x64', True)
-
-
-def get_gderivs(xastj, vastj, aastj):
-    """time derivatives of g=x^2+y^2 function (squared sky-projected star-planet distance)
-
-        Args:
-            xastj: astrocentric positions (Norbit, xyz)
-            vastj: astrocentric velocities (Norbit, xyz)
-            aastj: astrocentric accelerations (Norbit, xyz)
-
-        Returns:
-            values of g, dg/dt (Norbit,)
-
-    """
-    gj = jnp.sum(xastj[:, :2] * vastj[:, :2], axis=1)
-    dotgj = jnp.sum(vastj[:, :2] * vastj[:, :2], axis=1) + \
-        jnp.sum(xastj[:, :2] * aastj[:, :2], axis=1)
-    return gj, dotgj
-
-
-def find_transit_times_single(t, x, v, a, j, masses, nitr=5):
-    """find transit times (cannot be jitted)
-
-        Args:
-            t: times (Nstep,)
-            x: positions in CoM frame (Nstep, Norbit, xyz)
-            v: velocities in CoM frame (Nstep, Norbit, xyz)
-            a: accelerations in CoM frame (Nstep, Norbit, xyz)
-            j: index of the orbit (planet) for each transit times are computed
-            masses: masses of the bodies (Nbody,), solar unit
-            niter: number of Newton-Raphson iterations
-
-        Returns:
-            transit times for the jth orbit (planet) during integration
-
-    """
-    xastj, vastj, aastj = cm_to_astrocentric(x, v, a, j)
-    gj, dotgj = get_gderivs(xastj, vastj, aastj)
-
-    # step after the sign was changed
-    tcidx = (gj[1:] * gj[:-1] < 0) & (xastj[1:, 2] > 0) & (dotgj[1:] > 0)
-    tc = t[1:][tcidx]
-
-    nrstep = - (gj / dotgj)[1:][tcidx]
-    xtc = x[1:, :, :][tcidx]
-    vtc = v[1:, :, :][tcidx]
-
-    for i in range(nitr):
-        tc += nrstep
-        xtc, vtc, atc = hermite4_step_map(xtc, vtc, masses, nrstep)
-        xtc = jnp.transpose(xtc, axes=[2, 0, 1])
-        vtc = jnp.transpose(vtc, axes=[2, 0, 1])
-        atc = jnp.transpose(atc, axes=[2, 0, 1])
-        _xastj, _vastj, _aastj = cm_to_astrocentric(xtc, vtc, atc, j)
-        _gj, _dotgj = get_gderivs(_xastj, _vastj, _aastj)
-        nrstep = - _gj / _dotgj
-
-    return tc
-
-
-""" Newton-Raphson method w/o for loop """
 
 
 def get_tcflag(xjac, vjac):
@@ -148,6 +86,52 @@ def get_nrstep(x, v, a, j):
 get_nrstep_map = vmap(get_nrstep, (0, 0, 0, 0), 0)
 
 
+def _find_transit_candidates(pidxarr, tcobsarr, t, xvjac):
+    xjac, vjac = xvjac[:, 0, :, :], xvjac[:, 1, :, :]
+    tcflag = get_tcflag(xjac, vjac)
+    return find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
+
+
+def _prepare_transit_init(tcidx, pidxarr, t, xvjac, masses):
+    tc = t[1:][tcidx]
+    xvjac_init = xvjac[1:][tcidx]
+
+    # bring back the system by dt/2 so that the systems are at conclusions of the symplectic step
+    dt_correct = -0.5 * jnp.diff(t)[0]
+    tc += dt_correct
+    xjac_init, vjac_init = kepler_step_map(
+        xvjac_init[:, 0, :, :], xvjac_init[:, 1, :, :], masses, dt_correct)
+
+    xcm_init, vcm_init, acm_init = xvjac_to_xvacm(xjac_init, vjac_init, masses)
+    nrstep_init = get_nrstep_map(xcm_init, vcm_init, acm_init, pidxarr)
+
+    return tc, xcm_init, vcm_init, nrstep_init
+
+
+def _scan_transit_newton(xcm_init, vcm_init, nrstep_init, pidxarr, masses, nitr):
+    def tcstep(xvs, i):
+        xin, vin, step = xvs
+        xtc, vtc, atc = hermite4_step_map(xin, vin, masses, step)
+        xtc = jnp.transpose(xtc, axes=[2, 0, 1])
+        vtc = jnp.transpose(vtc, axes=[2, 0, 1])
+        atc = jnp.transpose(atc, axes=[2, 0, 1])
+        step = get_nrstep_map(xtc, vtc, atc, pidxarr)
+        return (xtc, vtc, step), step
+
+    tcstep = checkpoint(tcstep)
+    return scan(tcstep, (xcm_init, vcm_init, nrstep_init), jnp.arange(nitr))
+
+
+def _find_transit_newton_core(pidxarr, tcobsarr, t, xvjac, masses, nitr):
+    tcidx = _find_transit_candidates(pidxarr, tcobsarr, t, xvjac)
+    tc, xcm_init, vcm_init, nrstep_init = _prepare_transit_init(
+        tcidx, pidxarr, t, xvjac, masses)
+    xvs, steps = _scan_transit_newton(
+        xcm_init, vcm_init, nrstep_init, pidxarr, masses, nitr)
+    tc += nrstep_init + jnp.sum(steps, axis=0)
+    return tc, xvs
+
+
 def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
     """find transit times for all planets
 
@@ -163,42 +147,13 @@ def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
             transit times (1D flattened array)
 
     """
-    xjac, vjac = xvjac[:, 0, :, :], xvjac[:, 1, :, :]
-    tcflag = get_tcflag(xjac, vjac)
-    tcidx = find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
-
-    tc = t[1:][tcidx]
-    xvjac_init = xvjac[1:][tcidx]
-
-    # bring back the system by dt/2 so that the systems are at conclusions of the symplectic step
-    dt_correct = -0.5 * jnp.diff(t)[0]
-    tc += dt_correct
-    xjac_init, vjac_init = kepler_step_map(
-        xvjac_init[:, 0, :, :], xvjac_init[:, 1, :, :], masses, dt_correct)
-
-    xcm_init, vcm_init, acm_init = xvjac_to_xvacm(xjac_init, vjac_init, masses)
-    nrstep_init = get_nrstep_map(xcm_init, vcm_init, acm_init, pidxarr)
-
-    def tcstep(xvs, i):
-        xin, vin, step = xvs
-        xtc, vtc, atc = hermite4_step_map(xin, vin, masses, step)
-        xtc = jnp.transpose(xtc, axes=[2, 0, 1])
-        vtc = jnp.transpose(vtc, axes=[2, 0, 1])
-        atc = jnp.transpose(atc, axes=[2, 0, 1])
-        step = get_nrstep_map(xtc, vtc, atc, pidxarr)
-        return [xtc, vtc, step], step
-
-    tcstep = checkpoint(tcstep)
-
-    _, steps = scan(tcstep, [xcm_init, vcm_init,
-                    nrstep_init], jnp.arange(nitr))
-    tc += nrstep_init + jnp.sum(steps, axis=0)
-
+    tc, _ = _find_transit_newton_core(
+        pidxarr, tcobsarr, t, xvjac, masses, nitr)
     return tc
 
 
 def find_transit_params_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
-    """find transit times for all planets
+    """find transit times and phase-space coordinates for all planets
 
         Args:
             pidxarr: array of orbit index starting from 0 (Ntransit,)
@@ -209,41 +164,12 @@ def find_transit_params_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
             nitr: number of Newton-Raphson iterations
 
         Returns:
-            transit times (1D flattened array)
+            tuple:
+                - transit times (1D flattened array)
+                - positions, velocities, and NR step after the last iteration
 
     """
-    xjac, vjac = xvjac[:, 0, :, :], xvjac[:, 1, :, :]
-    tcflag = get_tcflag(xjac, vjac)
-    tcidx = find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
-
-    tc = t[1:][tcidx]
-    xvjac_init = xvjac[1:][tcidx]
-
-    # bring back the system by dt/2 so that the systems are at conclusions of the symplectic step
-    dt_correct = -0.5 * jnp.diff(t)[0]
-    tc += dt_correct
-    xjac_init, vjac_init = kepler_step_map(
-        xvjac_init[:, 0, :, :], xvjac_init[:, 1, :, :], masses, dt_correct)
-
-    xcm_init, vcm_init, acm_init = xvjac_to_xvacm(xjac_init, vjac_init, masses)
-    nrstep_init = get_nrstep_map(xcm_init, vcm_init, acm_init, pidxarr)
-
-    def tcstep(xvs, i):
-        xin, vin, step = xvs
-        xtc, vtc, atc = hermite4_step_map(xin, vin, masses, step)
-        xtc = jnp.transpose(xtc, axes=[2, 0, 1])
-        vtc = jnp.transpose(vtc, axes=[2, 0, 1])
-        atc = jnp.transpose(atc, axes=[2, 0, 1])
-        step = get_nrstep_map(xtc, vtc, atc, pidxarr)
-        return [xtc, vtc, step], step
-
-    tcstep = checkpoint(tcstep)
-
-    xvs, steps = scan(tcstep, [xcm_init, vcm_init,
-                      nrstep_init], jnp.arange(nitr))
-    tc += nrstep_init + jnp.sum(steps, axis=0)
-
-    return tc, xvs
+    return _find_transit_newton_core(pidxarr, tcobsarr, t, xvjac, masses, nitr)
 
 
 """ TTVFast algorithm """
@@ -337,7 +263,7 @@ find_transit_times_kepler_map = vmap(
 def find_transit_times_kepler_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=3):
     """find transit times for all planets via interpolation
 
-        Note: 
+        Note:
             Bug: this function sometimes fails for large dt for reason yet to be understood.
 
         Args:
@@ -400,83 +326,3 @@ def find_transit_times_kepler_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=3):
           * tau_behind) / (dt + tau_behind - tau_ahead)
 
     return tc
-
-
-""" Newton-Raphson method w/ for loop """
-'''
-def find_transit_times(t, x, v, a, j, tcobs, masses, nitr=5):
-    """ find transit times (jit version)
-    This requires tcobs, since the routine finds only transit times nearest to the observed ones.
-
-        Args:
-            t: times (Nstep,)
-            x: positions in CoM frame (Nstep, Norbit, xyz)
-            v: velocities in CoM frame (Nstep, Norbit, xyz)
-            a: accelerations in CoM frame (Nstep, Norbit, xyz)
-            j: index of the orbit (planet) for each transit times are computed
-            tcobs: observed transit times for jth orbit (planet)
-            masses: masses of the bodies (Nbody,), solar unit
-            niter: number of Newton-Raphson iterations
-
-        Returns:
-            transit times for the jth orbit (planet)
-            nearest to the observed ones
-
-    """
-    xastj, vastj, aastj = cm_to_astrocentric(x, v, a, j)
-    gj, dotgj = get_gderivs(xastj, vastj, aastj)
-
-    # get t, x, v where tcidx=True; difficult to make this compatible with jit
-    # should be improved
-    tcidx = (gj[1:] * gj[:-1] < 0) & (xastj[1:,2] > 0) & (dotgj[1:] > 0)
-    _tc = jnp.where(tcidx, t[1:], -jnp.inf)
-    idxsort = jnp.argsort(_tc)
-    _tcsort = _tc[idxsort]
-    tcidx1 = jnp.searchsorted(_tcsort, tcobs)
-    tcidx2 = tcidx1 - 1
-    tc1, tc2 = _tcsort[tcidx1], _tcsort[tcidx2]
-    tcidx = jnp.where(jnp.abs(tcobs-tc1) < jnp.abs(tcobs-tc2), tcidx1, tcidx2)
-    tc = _tcsort[tcidx]
-
-    nrstep = - (gj / dotgj)[1:][idxsort][tcidx]
-    xtc = x[1:,:,:][idxsort][tcidx]
-    vtc = v[1:,:,:][idxsort][tcidx]
-
-    def tcstep(xvs, i):
-        xin, vin, step = xvs
-        xtc, vtc, atc = hermite4_step_map(xin, vin, masses, step)
-        xtc = jnp.transpose(xtc, axes=[2,0,1])
-        vtc = jnp.transpose(vtc, axes=[2,0,1])
-        atc = jnp.transpose(atc, axes=[2,0,1])
-        _xastj, _vastj, _aastj = cm_to_astrocentric(xtc, vtc, atc, j)
-        _gj, _dotgj = get_gderivs(_xastj, _vastj, _aastj)
-        step = - _gj / _dotgj
-        return [xtc, vtc, step], step
-
-    _, steps = scan(tcstep, [xtc, vtc, nrstep], jnp.arange(nitr))
-    tc += nrstep + jnp.sum(steps, axis=0)
-
-    return tc
-
-
-def find_transit_times_planets(t, x, v, a, tcobs, masses, nitr=5):
-    """ find transit times: loop over each planet (should be modified)
-
-        Args:
-            t: times
-            x: positions in CoM frame (Nstep, Norbit, xyz)
-            v: velocities in CoM frame (Nstep, Norbit, xyz)
-            a: accelerations in CoM frame (Nstep, Norbit, xyz)
-            tcobs: list of observed transit times
-            masses: masses of the bodies (in units of solar mass)
-
-        Returns:
-            model transit times (1D flattened array)
-
-    """
-    tcarr = jnp.array([])
-    for j in range(len(masses)-1):
-        tc = find_transit_times(t, x, v, a, j+1, tcobs[j], masses, nitr=nitr)
-        tcarr = jnp.hstack([tcarr, tc])
-    return tcarr
-'''
