@@ -22,7 +22,7 @@ config.update('jax_enable_x64', True)
 class Nbody:
     """superclass for nbody analysis"""
 
-    def __init__(self, t_start, t_end, dt, nitr_kepler=3):
+    def __init__(self, t_start, t_end, dt, nitr_kepler=10):
         """initialization
 
             Args:
@@ -42,7 +42,7 @@ class Nbody:
 class JaxTTV(Nbody):
     """main class for TTV analysis"""
 
-    def __init__(self, t_start, t_end, dt, tcobs, p_init, errorobs=None, print_info=True, nitr_kepler=3, transit_time_method='newton-raphson', nitr_transit=5):
+    def __init__(self, t_start, t_end, dt, tcobs, p_init, errorobs=None, print_info=True, nitr_kepler=10, transit_time_method='newton-raphson', nitr_transit=5):
         """initialization
 
             Args:

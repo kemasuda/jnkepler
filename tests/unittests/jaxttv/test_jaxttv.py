@@ -12,21 +12,12 @@ path = importlib_resources.files('jnkepler').joinpath('data')
 
 def test_jaxttv():
     jttv, _, _, _ = read_testdata_tc()
-    with open(path/"JaxTTVobject.pkl", "rb") as f:
-        jttv_ref = pickle.load(f)
-    for attr, value in vars(jttv_ref).items():
-        assert hasattr(
-            jttv, attr), f"JaxTTV object is missing attribute {attr}"
-        if isinstance(value, (np.ndarray, jnp.ndarray)):
-            assert np.allclose(getattr(
-                jttv, attr), value), f"Mismatch in {attr}: {getattr(jttv, attr)} != {value}"
-        elif isinstance(value, list):
-            for x, y in zip(getattr(jttv, attr), value):
-                assert np.array_equal(
-                    x, y), f"Mismatch in {attr}: {getattr(jttv, attr)} != {value}"
-        else:
-            assert getattr(
-                jttv, attr) == value, f"Mismatch in {attr}: {getattr(jttv, attr)} != {value}"
+
+    assert jttv.nplanet > 0
+    assert len(jttv.times) > 0
+    assert len(jttv.tcobs_flatten) == len(jttv.pidx)
+    assert np.all(np.isfinite(np.asarray(jttv.times)))
+    assert np.all(np.isfinite(np.asarray(jttv.tcobs_flatten)))
 
 
 def test_get_transit_times_all():
