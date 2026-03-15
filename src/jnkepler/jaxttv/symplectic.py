@@ -385,13 +385,13 @@ def kepler_kick_kepler_map(xjac, vjac, masses, dt, nitr=10):
     """
     ki = _compute_ki(masses)
 
-    def kepler_kick_kepler(x, v):
+    def kepler_kick_kepler(x, v, dt):
         x, v = kepler_step(x, v, ki, 0.5 * dt, nitr=nitr)
         x, v = nbody_kicks(x, v, ki, masses, dt)
         return kepler_step(x, v, ki, 0.5 * dt, nitr=nitr)
 
-    func_map = vmap(kepler_kick_kepler, (0, 0), 0)
-    return func_map(xjac, vjac)
+    func_map = vmap(kepler_kick_kepler, (0, 0, 0), 0)
+    return func_map(xjac, vjac, dt)
 
 
 def compute_corrector_coefficientsTO():
