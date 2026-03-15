@@ -9,7 +9,7 @@ from functools import partial
 from ..jaxttv import JaxTTV
 from ..jaxttv.utils import *
 from ..jaxttv.conversion import *
-from ..jaxttv.findtransit import *
+from ..jaxttv.findtransit import find_transit_params_all, find_transit_params_fast
 from ..jaxttv.symplectic import integrate_xv, kepler_step_map
 from ..jaxttv.hermite4 import integrate_xv as integrate_xv_hermite4
 from ..jaxttv.rv import *
@@ -51,13 +51,13 @@ class NbodyTransit(JaxTTV):
         times_transit_idx, times_planet_idx = [], []
         for j in range(self.nplanet):
             tcj = np.where(self.pidx == j+1, self.tcobs_flatten, -np.inf)
-            _tidx = findidx_map(tcj, self.times_super)
+            _tidx = find_nearest_idx(tcj, self.times_super)
             _pidx = jnp.ones_like(_tidx) * j
             times_transit_idx.append(_tidx)
             times_planet_idx.append(_pidx)
         self.times_transit_idx = jnp.array(times_transit_idx)
         self.times_planet_idx = jnp.array(times_planet_idx)
-        self.times_transit_idx_nool = findidx_map(
+        self.times_transit_idx_nool = find_nearest_idx(
             self.tcobs_flatten, self.times_super)
         self.times_planet_idx_nool = self.pidx[self.times_transit_idx_nool].astype(
             int) - 1
@@ -93,8 +93,14 @@ class NbodyTransit(JaxTTV):
             xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler)  # integration
         pidxarr = self.pidx.astype(int)  # idx for planet, starting from 1
         tcobs1d = self.tcobs_flatten
-        tc, (xcm, vcm, _) = find_transit_params_all(
-            pidxarr-1, tcobs1d, times, xvjac, masses)
+        if self.transit_time_method == "newton":
+            tc, (xcm, vcm, _) = find_transit_params_all(
+                pidxarr - 1, tcobs1d, times, xvjac, masses
+            )
+        else:
+            tc, (xcm, vcm, _) = find_transit_params_fast(
+                pidxarr - 1, tcobs1d, times, xvjac, masses
+            )
         xsky_tc, vsky_tc = get_xvast_map(xcm, vcm, pidxarr)
         return tc, xsky_tc, vsky_tc, times, xvjac, masses
 

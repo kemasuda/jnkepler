@@ -236,26 +236,28 @@ def cm_to_astrocentric(x, v, a, j):
 
 
 def get_acm(x, masses):
-    """compute acceleration given position, velocity, mass
+    """compute acceleration given position, mass
 
-        Args:
-            x: positions in CoM frame (Norbit, xyz)
-            masses: masses of the bodies (Nbody)
+    Args:
+        x: positions in CoM frame (Norbit, xyz)
+        masses: masses of the bodies (Nbody)
 
-        Returns:
-            array: accelerations (Norbit, xyz)
-
+    Returns:
+        array: accelerations in the CoM frame (Norbit, xyz)
     """
-    xjk = jnp.transpose(x[:, None] - x[None, :], axes=[0, 2, 1])
-    x2jk = jnp.sum(xjk * xjk, axis=1)[:, None, :]
-    x2jk = jnp.where(x2jk != 0., x2jk, jnp.inf)
-    x2jkinv = 1. / x2jk
+    xjk = jnp.transpose(x[:, None] - x[None, :], axes=[0, 2, 1])   # (N, 3, N)
+    x2jk = jnp.sum(xjk * xjk, axis=1, keepdims=True)               # (N, 1, N)
 
-    x2jkinv1p5 = x2jkinv * jnp.sqrt(x2jkinv)
-    Xjk = - xjk * x2jkinv1p5
+    mask = ~jnp.eye(x.shape[0], dtype=bool)[:, None, :]            # (N, 1, N)
+
+    # avoid singular values on the diagonal in the differentiated path
+    x2jk_safe = jnp.where(mask, x2jk, 1.0)
+    xjk_safe = jnp.where(mask, xjk, 0.0)
+
+    inv_r3 = x2jk_safe ** (-1.5)
+    Xjk = -xjk_safe * inv_r3
 
     a = G * jnp.dot(Xjk, masses)
-
     return a
 
 
