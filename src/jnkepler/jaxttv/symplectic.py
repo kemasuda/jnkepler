@@ -2,7 +2,8 @@
 approach used in TTVFast (https://github.com/kdeck/TTVFast).
 """
 
-__all__ = ["integrate_xv", "kepler_step_map", "kick_kepler_map"]
+__all__ = ["integrate_xv", "kepler_step_map",
+           "kick_kepler_map", "kepler_kick_kepler_map"]
 
 import jax.numpy as jnp
 from functools import partial
@@ -12,6 +13,19 @@ from jax.lax import scan, while_loop
 from .conversion import G
 
 config.update("jax_enable_x64", True)
+
+
+def _compute_ki(masses):
+    """Return the effective two-body GM values for Jacobi coordinates.
+
+    Args:
+        masses: masses of the bodies (Nbody,), in units of solar mass
+
+    Returns:
+        GM values for each Jacobi orbit, shape (Norbit,)
+    """
+    csum = jnp.cumsum(masses)
+    return G * masses[0] * csum[1:] / jnp.hstack([masses[0], csum[1:][:-1]])
 
 
 def dEstep(x, ecosE0, esinE0, dM):
@@ -272,25 +286,25 @@ def nbody_kicks(x, v, ki, masses, dt):
 
 
 def integrate_xv(x, v, masses, times, nitr=10):
-    """symplectic integration of the orbits
+    """Integrate Jacobi positions and velocities using the Wisdom-Holman map.
+
+    This function currently assumes that `times` are uniformly spaced. Internally, the
+    map is initialized using the first time interval and then advanced with a
+    fixed step size, so non-uniform `times` are not supported.
 
     Args:
-        x: initial Jacobi positions (Norbit, xyz)
-        v: initial Jacobi velocities (Norbit, xyz)
+        x: initial Jacobi positions in Cartesian coordinates (Norbit, xyz)
+        v: initial Jacobi velocities in Cartesian coordinates (Norbit, xyz)
         masses: masses of the bodies (Nbody,), in units of solar mass
-        times: cumulative sum of time steps
+        times: 1D array of uniformly spaced output times
+        nitr: number of iterations in Kepler's equation solver
 
     Returns:
         tuple:
-            - times (initial time omitted; dt/2 ahead of the input)
-            - Jacobi position/velocity array (Nstep, x or v, Norbit, xyz)
+            - times at the middle of each map step
+            - integrated Jacobi positions and velocities
     """
-    ki = (
-        G
-        * masses[0]
-        * jnp.cumsum(masses)[1:]
-        / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
-    )
+    ki = _compute_ki(masses)
     dtarr = jnp.diff(times)
 
     # transformation between the mapping and real Hamiltonian
@@ -322,12 +336,7 @@ def kepler_step_map(xjac, vjac, masses, dt, nitr=10):
     Returns:
         new Jacobi positions and velocities (Ntime, x or v, Norbit, xyz)
     """
-    ki = (
-        G
-        * masses[0]
-        * jnp.cumsum(masses)[1:]
-        / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
-    )
+    ki = _compute_ki(masses)
 
     def step(x, v):
         return kepler_step(x, v, ki, dt, nitr=nitr)
@@ -348,18 +357,40 @@ def kick_kepler_map(xjac, vjac, masses, dt, nitr=10):
     Returns:
         new jacobi positions and velocities (Ntime, x or v, Norbit, xyz)
     """
-    ki = (
-        G
-        * masses[0]
-        * jnp.cumsum(masses)[1:]
-        / jnp.hstack([masses[0], jnp.cumsum(masses)[1:][:-1]])
-    )
+    ki = _compute_ki(masses)
 
     def kick_kepler(x, v):
         x, v = nbody_kicks(x, v, ki, masses, 2 * dt)
         return kepler_step(x, v, ki, dt, nitr=nitr)
 
     func_map = vmap(kick_kepler, (0, 0), 0)
+    return func_map(xjac, vjac)
+
+
+def kepler_kick_kepler_map(xjac, vjac, masses, dt, nitr=10):
+    """vmap version of kepler_step + nbody_kicks + kepler_step.
+
+    This applies a full KDK-like step written in the order
+    kepler(dt/2) -> kick(dt) -> kepler(dt/2) to each element along the
+    first axis.
+
+    Args:
+        xjac: Jacobi positions (Ntime, Norbit, xyz)
+        vjac: Jacobi velocities (Ntime, Norbit, xyz)
+        masses: masses of the bodies (Nbody,), in units of solar mass
+        dt: common full time step
+
+    Returns:
+        new Jacobi positions and velocities (Ntime, x or v, Norbit, xyz)
+    """
+    ki = _compute_ki(masses)
+
+    def kepler_kick_kepler(x, v):
+        x, v = kepler_step(x, v, ki, 0.5 * dt, nitr=nitr)
+        x, v = nbody_kicks(x, v, ki, masses, dt)
+        return kepler_step(x, v, ki, 0.5 * dt, nitr=nitr)
+
+    func_map = vmap(kepler_kick_kepler, (0, 0), 0)
     return func_map(xjac, vjac)
 
 
