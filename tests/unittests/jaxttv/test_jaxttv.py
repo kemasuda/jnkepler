@@ -5,7 +5,7 @@ from importlib.util import find_spec
 import pickle
 from jnkepler.tests import read_testdata_tc, read_testdata_4planet
 from jnkepler.jaxttv.ttvfastutils import params_for_ttvfast, get_ttvfast_model_rv, get_ttvfast_model
-from jnkepler.jaxttv.utils import em_to_dict, params_to_elements, elements_to_pdic, findidx_map
+from jnkepler.jaxttv.utils import em_to_dict, params_to_elements, elements_to_pdic, find_nearest_idx
 
 path = importlib_resources.files('jnkepler').joinpath('data')
 
@@ -134,7 +134,7 @@ def get_ttvfast_times(jttv, pdic, nplanet, obs=True, **kwargs):
     if not obs:
         return tcs_ttvfast
 
-    idx_for_tf = findidx_map(tcs_ttvfast, jttv.tcobs_flatten)
+    idx_for_tf = find_nearest_idx(tcs_ttvfast, jttv.tcobs_flatten)
     tc_tf = tcs_ttvfast[idx_for_tf]
 
     return tc_tf
@@ -152,7 +152,7 @@ def get_ttvfast_times_and_rvs(jttv, pdic, nplanet, times_rv, obs=True, **kwargs)
     tcs_ttvfast = np.hstack(tcs_ttvfast)
 
     if obs:
-        idx_for_tf = findidx_map(tcs_ttvfast, jttv.tcobs_flatten)
+        idx_for_tf = find_nearest_idx(tcs_ttvfast, jttv.tcobs_flatten)
         tcs_ttvfast = tcs_ttvfast[idx_for_tf]
 
     return tcs_ttvfast, rvs

@@ -560,7 +560,7 @@ class JaxTTV(Nbody):
             if ylims is not None and len(ylims) == len(t0_lin):
                 ax2.set_ylim(ylims[j])
 
-            idxm = findidx_map(tcmodel, tcobs)
+            idxm = find_nearest_idx(tcmodel, tcobs)
             ax2.errorbar(tcobs, (tcobs-tcmodel[idxm])*unit, yerr=errorobs*unit, zorder=1000,
                          fmt='o', mfc='white', color='dimgray', label='data', lw=1, markersize=7)
             ax2.axhline(y=0, color='steelblue', alpha=0.6)

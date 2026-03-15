@@ -11,7 +11,7 @@ from jax.lax import scan
 from .conversion import xvjac_to_xvacm, jacobi_to_astrocentric, G
 from .symplectic import kepler_step_map, kick_kepler_map
 from .hermite4 import hermite4_step_map
-from .utils import findidx_map
+from .utils import find_nearest_idx
 config.update('jax_enable_x64', True)
 
 
@@ -52,7 +52,7 @@ def find_tc_idx(t, tcflag, j, tcobs):
 
     """
     tc_candidates = jnp.where(tcflag[:, j], t[1:], -jnp.inf)
-    tcidx = findidx_map(tc_candidates, jnp.atleast_1d(tcobs))
+    tcidx = find_nearest_idx(tc_candidates, jnp.atleast_1d(tcobs))
     return tcidx
 
 

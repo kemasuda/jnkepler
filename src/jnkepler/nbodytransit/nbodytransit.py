@@ -51,13 +51,13 @@ class NbodyTransit(JaxTTV):
         times_transit_idx, times_planet_idx = [], []
         for j in range(self.nplanet):
             tcj = np.where(self.pidx == j+1, self.tcobs_flatten, -np.inf)
-            _tidx = findidx_map(tcj, self.times_super)
+            _tidx = find_nearest_idx(tcj, self.times_super)
             _pidx = jnp.ones_like(_tidx) * j
             times_transit_idx.append(_tidx)
             times_planet_idx.append(_pidx)
         self.times_transit_idx = jnp.array(times_transit_idx)
         self.times_planet_idx = jnp.array(times_planet_idx)
-        self.times_transit_idx_nool = findidx_map(
+        self.times_transit_idx_nool = find_nearest_idx(
             self.tcobs_flatten, self.times_super)
         self.times_planet_idx_nool = self.pidx[self.times_transit_idx_nool].astype(
             int) - 1
