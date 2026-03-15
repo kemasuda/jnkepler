@@ -37,6 +37,11 @@ import jax
 If this is not done, `jnkepler` will issue a warning on import.
 **Please note that this workaround is intended for JAX < 0.7**; this is why `jnkepler` currently requires `jax<0.7`.
 
+### *Note on the transit-finding algorithm (since v0.2.5)*
+
+In `JaxTTV.get_transit_times_obs`, the default transit-time solver is now `"fast"`. This method is optimized for efficient evaluation near the observed transit times, which is typically sufficient for inference because models far from
+the data have very low likelihood. For models that are substantially offset from the observed transit times, however, the fast method can be less accurate than the Newton-based method. Use `transit_time_method="newton"` when robust accuracy is needed in that regime.
+
 
 ## Examples
 
@@ -65,6 +70,7 @@ Explore example notebooks in the `examples/` directory to see `jnkepler` in acti
 - K2-19: TTVs confirm 3:2 resonance [[paper]](https://arxiv.org/abs/2509.18031)
 - TOI-4495: Photodynamical modeling of a pair of near-resonant sub-Neptunes [[paper]](https://arxiv.org/abs/2601.02665) [[repository]](https://github.com/kemasuda/toi4495-ttv)
 - V1298 Tau: Four low-density planets transiting a young star [[paper]](https://www.nature.com/articles/s41586-025-09840-z) [[repository]](https://github.com/kemasuda/v1298tau-ttv); see also `examples/v1298tau_ttv_student.ipynb` in this repo
+- TOI-2076: [[paper]](https://ui.adsabs.harvard.edu/abs/2026arXiv260302550W/abstract) 
 
 ## References
 
