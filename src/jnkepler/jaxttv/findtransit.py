@@ -1,121 +1,130 @@
-"""Routines for finding transit times.
-"""
+"""Routines for finding transit times."""
+
 __all__ = [
-    "find_transit_times_all", "find_transit_params_all",
-    "find_transit_times_kepler_all"
+    "find_transit_times_all",
+    "find_transit_times_fast",
+    "find_transit_params_all",
+    "find_transit_params_fast",
+    "find_transit_times_kepler_all",
 ]
 
 import jax.numpy as jnp
-from jax import vmap, config, checkpoint
+from jax import checkpoint, config, vmap
 from jax.lax import scan
-from .conversion import xvjac_to_xvacm, jacobi_to_astrocentric, G
-from .symplectic import kepler_step_map, kick_kepler_map, kepler_kick_kepler_map
+
+from .conversion import G, jacobi_to_astrocentric, xvjac_to_xvacm
 from .hermite4 import hermite4_step_map
+from .symplectic import kepler_kick_kepler_map, kepler_step_map, kick_kepler_map
 from .utils import find_nearest_idx, find_nearest_idx_sorted
-config.update('jax_enable_x64', True)
+
+config.update("jax_enable_x64", True)
 
 
-def get_tcflag(xjac, vjac):
-    """find times just after the transit centers using *Jacobi* coordinates
+def _get_tcflag(xjac, vjac):
+    """Find steps just after transit centers using Jacobi coordinates.
 
-        Args:
-            xjac: jacobi positions (Nstep, Norbit, xyz)
-            vjac: jacobi velocities (Nstep, Norbit, xyz)
+    Args:
+        xjac: Jacobi positions of shape ``(Nstep, Norbit, 3)``.
+        vjac: Jacobi velocities of shape ``(Nstep, Norbit, 3)``.
 
-        Returns:
-            array (bool): True if the time is just after the transit center (Nstep-1,)
-
+    Returns:
+        Boolean array of shape ``(Nstep - 1, Norbit)`` whose entries are
+        True at steps just after the transit center.
     """
-    g = jnp.sum(xjac[:, :, :2] * vjac[:, :, :2], axis=2)  # Nstep, Norbit
-    tcflag = (g[:-1] < 0) & (g[1:] > 0) & (xjac[1:, :, 2] > 0)
-    return tcflag
+    g = jnp.sum(xjac[:, :, :2] * vjac[:, :, :2], axis=2)
+    return (g[:-1] < 0.0) & (g[1:] > 0.0) & (xjac[1:, :, 2] > 0.0)
 
 
-def get_g_map(xjac, vjac, pidxarr):
-    def g_orbit(xjac, vjac, j):
-        return jnp.sum(xjac[j, :2] * vjac[j, :2])
+def _get_g_map(xjac, vjac, pidxarr):
+    """Evaluate ``x · v`` in the sky plane for the selected planets."""
+
+    def g_orbit(xjac_one, vjac_one, j):
+        return jnp.sum(xjac_one[j, :2] * vjac_one[j, :2])
+
     g_map = vmap(g_orbit, (0, 0, 0), 0)
     return g_map(xjac, vjac, pidxarr).ravel()
 
 
-def find_tc_idx(t, tcflag, j, tcobs):
-    """find indices for times where tcflag is True
+def _find_tc_idx(t, tcflag, j, tcobs):
+    """Find candidate-step indices nearest to the target transit times.
 
-        Args:
-            t: times (Nstep,)
-            tcflag: True if the time is just after the transit center (Nstep-1,)
-            j: orbit (planet) index
-            tcobs: transit times for jth orbit (planet)
+    Args:
+        t: Time array of shape ``(Nstep,)``.
+        tcflag: Boolean array of shape ``(Nstep - 1, Norbit)`` indicating
+            whether each step is just after a transit center.
+        j: Orbit index.
+        tcobs: Target transit time or times for the selected orbit.
 
-        Returns:
-            array: indices of times cloeset to transit centers (Nstep-1,); should be put into times[1:], x[1:], etc.
-
+    Returns:
+        Indices in ``t[1:]`` closest to ``tcobs`` among the entries where
+        ``tcflag[:, j]`` is True.
     """
     tc_candidates = jnp.where(tcflag[:, j], t[1:], -jnp.inf)
-    tcidx = find_nearest_idx(tc_candidates, jnp.atleast_1d(tcobs))
-    return tcidx
+    return find_nearest_idx(tc_candidates, jnp.atleast_1d(tcobs))
 
 
-# map along the transit axis
-find_tc_idx_map = vmap(find_tc_idx, (None, None, 0, 0), 0)
+_find_tc_idx_map = vmap(_find_tc_idx, (None, None, 0, 0), 0)
 
 
-def get_nrstep(x, v, a, j):
-    """compute NR step for jth orbit (planet)
+def _get_nrstep(x, v, a, j):
+    """Compute one Newton correction step for the selected planet.
 
-        Args:
-            x: positions in CM frame (Norbit, xyz)
-            v: velocities in CM frame (Norbit, xyz)
-            a: accels in CM frame (Norbit, xyz)
-            j: orbit (planet) index, starting from 0
+    Args:
+        x: Positions in the center-of-mass frame of shape ``(Nbody, 3)``.
+        v: Velocities in the center-of-mass frame of shape ``(Nbody, 3)``.
+        a: Accelerations in the center-of-mass frame of shape ``(Nbody, 3)``.
+        j: Orbit index starting from 0.
 
-        Returns:
-            NR step for jth orbit (planet)
-
+    Returns:
+        Newton correction step for the selected planet.
     """
-    xastj = x[j+1, :] - x[0, :]
-    vastj = v[j+1, :] - v[0, :]
-    aastj = a[j+1, :] - a[0, :]
+    xastj = x[j + 1, :] - x[0, :]
+    vastj = v[j + 1, :] - v[0, :]
+    aastj = a[j + 1, :] - a[0, :]
     gj = jnp.sum(xastj[:2] * vastj[:2])
     dotgj = jnp.sum(vastj[:2] * vastj[:2]) + jnp.sum(xastj[:2] * aastj[:2])
-    stepj = - gj / dotgj
-    return stepj
+    return -gj / dotgj
 
 
-# map along the transit axis
-get_nrstep_map = vmap(get_nrstep, (0, 0, 0, 0), 0)
+_get_nrstep_map = vmap(_get_nrstep, (0, 0, 0, 0), 0)
 
 
 def _find_transit_candidates(pidxarr, tcobsarr, t, xvjac):
+    """Find integration steps nearest to the target transit times."""
     xjac, vjac = xvjac[:, 0, :, :], xvjac[:, 1, :, :]
-    tcflag = get_tcflag(xjac, vjac)
-    return find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
+    tcflag = _get_tcflag(xjac, vjac)
+    return _find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
 
 
-def _prepare_transit_init(tcidx, pidxarr, t, xvjac, masses):
+def _prepare_transit_newton_init(tcidx, pidxarr, t, xvjac, masses):
+    """Prepare initial states for Newton refinement."""
     tc = t[1:][tcidx]
     xvjac_init = xvjac[1:][tcidx]
 
-    # bring back the system by dt/2 so that the systems are at conclusions of the symplectic step
+    # Bring back the system by dt/2 so that the states are at the
+    # conclusions of the symplectic step.
     dt_correct = -0.5 * jnp.diff(t)[0]
     tc += dt_correct
     xjac_init, vjac_init = kepler_step_map(
-        xvjac_init[:, 0, :, :], xvjac_init[:, 1, :, :], masses, dt_correct)
+        xvjac_init[:, 0, :, :], xvjac_init[:, 1, :, :], masses, dt_correct
+    )
 
     xcm_init, vcm_init, acm_init = xvjac_to_xvacm(xjac_init, vjac_init, masses)
-    nrstep_init = get_nrstep_map(xcm_init, vcm_init, acm_init, pidxarr)
+    nrstep_init = _get_nrstep_map(xcm_init, vcm_init, acm_init, pidxarr)
 
     return tc, xcm_init, vcm_init, nrstep_init
 
 
 def _scan_transit_newton(xcm_init, vcm_init, nrstep_init, pidxarr, masses, nitr):
-    def tcstep(xvs, i):
+    """Run Newton refinement for the transit times."""
+
+    def tcstep(xvs, _):
         xin, vin, step = xvs
         xtc, vtc, atc = hermite4_step_map(xin, vin, masses, step)
         xtc = jnp.transpose(xtc, axes=[2, 0, 1])
         vtc = jnp.transpose(vtc, axes=[2, 0, 1])
         atc = jnp.transpose(atc, axes=[2, 0, 1])
-        step = get_nrstep_map(xtc, vtc, atc, pidxarr)
+        step = _get_nrstep_map(xtc, vtc, atc, pidxarr)
         return (xtc, vtc, step), step
 
     tcstep = checkpoint(tcstep)
@@ -123,38 +132,56 @@ def _scan_transit_newton(xcm_init, vcm_init, nrstep_init, pidxarr, masses, nitr)
 
 
 def _find_transit_newton_core(pidxarr, tcobsarr, t, xvjac, masses, nitr):
+    """Core Newton-based transit finder."""
     tcidx = _find_transit_candidates(pidxarr, tcobsarr, t, xvjac)
-    tc, xcm_init, vcm_init, nrstep_init = _prepare_transit_init(
-        tcidx, pidxarr, t, xvjac, masses)
+    tc, xcm_init, vcm_init, nrstep_init = _prepare_transit_newton_init(
+        tcidx, pidxarr, t, xvjac, masses
+    )
     xvs, steps = _scan_transit_newton(
-        xcm_init, vcm_init, nrstep_init, pidxarr, masses, nitr)
+        xcm_init, vcm_init, nrstep_init, pidxarr, masses, nitr
+    )
     tc += nrstep_init + jnp.sum(steps, axis=0)
     return tc, xvs
 
 
-def _find_tc_idx_noflag(t, tcobs):
-    """Find indices in ``t[1:]`` nearest to the observed transit times.
+def _find_tc_idx_sorted(t, tcobs):
+    """Find indices in ``t[1:]`` nearest to the target transit times.
 
     Args:
         t: Time array of shape ``(Nstep,)``.
-        tcobs: Target transit time or times. A scalar or array-like input
-            is accepted.
+        tcobs: Target transit time or times. A scalar or array-like input is
+            accepted.
 
     Returns:
         Indices in ``t[1:]`` nearest to ``tcobs``.
     """
-    tcidx = find_nearest_idx_sorted(t[1:], jnp.atleast_1d(tcobs))
-    return tcidx
+    return find_nearest_idx_sorted(t[1:], jnp.atleast_1d(tcobs))
 
 
-def _advance_to_tcobs(tcidx, pidxarr, tcobsarr, t, xvjac, masses):
-    """Advance states to the observed transit times for the fast algorithm."""
+def _advance_to_tcobs_fast(tcidx, pidxarr, tcobsarr, t, xvjac, masses):
+    """Advance states to ``tcobsarr`` for the fast transit finder.
 
+    Args:
+        tcidx: Indices in ``t[1:]`` nearest to ``tcobsarr``.
+        pidxarr: Planet indices corresponding to each transit.
+        tcobsarr: Observed transit times.
+        t: Time array of shape ``(Nstep,)``.
+        xvjac: Jacobi-frame positions and velocities of shape
+            ``(Nstep, 2, Norbit, 3)``.
+        masses: Mass array of shape ``(Nbody,)``.
+
+    Returns:
+        Tuple containing
+            - the observed transit times,
+            - positions in the center-of-mass frame at ``tcobsarr``,
+            - velocities in the center-of-mass frame at ``tcobsarr``, and
+            - the transit-time correction evaluated at ``tcobsarr``.
+    """
     tc = t[1:][tcidx]
     xvjac_init = xvjac[1:][tcidx]
 
-    # bring back the system by dt/2 so that the systems are at conclusions
-    # of the symplectic step
+    # Bring back the system by dt/2 so that the states are at the
+    # conclusions of the symplectic step.
     dt_correct = -0.5 * jnp.diff(t)[0]
     tc += dt_correct
     xjac_init, vjac_init = kepler_step_map(
@@ -164,7 +191,7 @@ def _advance_to_tcobs(tcidx, pidxarr, tcobsarr, t, xvjac, masses):
         dt_correct,
     )
 
-    # advance to observed times
+    # Advance from the step boundary to the observed transit times.
     dt_to_tcobs = tcobsarr - tc
     xjac_tcobs, vjac_tcobs = kepler_kick_kepler_map(
         xjac_init,
@@ -174,23 +201,28 @@ def _advance_to_tcobs(tcidx, pidxarr, tcobsarr, t, xvjac, masses):
     )
 
     xcm_tcobs, vcm_tcobs, acm_tcobs = xvjac_to_xvacm(
-        xjac_tcobs, vjac_tcobs, masses)
-    nrstep_tcobs = get_nrstep_map(xcm_tcobs, vcm_tcobs, acm_tcobs, pidxarr)
+        xjac_tcobs, vjac_tcobs, masses
+    )
+    nrstep_tcobs = _get_nrstep_map(xcm_tcobs, vcm_tcobs, acm_tcobs, pidxarr)
 
     return tcobsarr, xcm_tcobs, vcm_tcobs, nrstep_tcobs
 
 
-def _find_transit_time_fast_core(pidxarr, tcobsarr, t, xvjac, masses):
-    tcidx = _find_tc_idx_noflag(t, tcobsarr)
-    tcobs, _, _, nrstep_tcobs = _advance_to_tcobs(
-        tcidx, pidxarr, tcobsarr, t, xvjac, masses)
+def _find_transit_times_fast_core(pidxarr, tcobsarr, t, xvjac, masses):
+    """Core fast transit finder returning only transit times."""
+    tcidx = _find_tc_idx_sorted(t, tcobsarr)
+    tcobs, _, _, nrstep_tcobs = _advance_to_tcobs_fast(
+        tcidx, pidxarr, tcobsarr, t, xvjac, masses
+    )
     return tcobs + nrstep_tcobs
 
 
 def _find_transit_params_fast_core(pidxarr, tcobsarr, t, xvjac, masses):
-    tcidx = _find_tc_idx_noflag(t, tcobsarr)
-    tcobs, xcm_tcobs, vcm_tcobs, nrstep_tcobs = _advance_to_tcobs(
-        tcidx, pidxarr, tcobsarr, t, xvjac, masses)
+    """Core fast transit finder returning transit times and phase-space states."""
+    tcidx = _find_tc_idx_sorted(t, tcobsarr)
+    tcobs, xcm_tcobs, vcm_tcobs, nrstep_tcobs = _advance_to_tcobs_fast(
+        tcidx, pidxarr, tcobsarr, t, xvjac, masses
+    )
     xcm_tc, vcm_tc, _ = hermite4_step_map(
         xcm_tcobs, vcm_tcobs, masses, nrstep_tcobs)
     xcm_tc = jnp.transpose(xcm_tc, axes=[2, 0, 1])
@@ -199,19 +231,20 @@ def _find_transit_params_fast_core(pidxarr, tcobsarr, t, xvjac, masses):
 
 
 def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
-    """find transit times for all planets
+    """Find transit times for all requested transits using Newton refinement.
 
-        Args:
-            pidxarr: array of orbit index starting from 0 (Ntransit,)
-            tcobsarray: flattened array of observed transit times (Ntransit,)
-            t: times (Nstep,)
-            xvjac: Jacobi positions and velocities (Nstep, x or v, Norbit, xyz)
-            masses: masses of the bodies (Nbody,)
-            nitr: number of Newton-Raphson iterations
+    Args:
+        pidxarr: Orbit indices starting from 0, with shape ``(Ntransit,)``.
+        tcobsarr: Flattened array of observed transit times of shape
+            ``(Ntransit,)``.
+        t: Time array of shape ``(Nstep,)``.
+        xvjac: Jacobi positions and velocities of shape
+            ``(Nstep, 2, Norbit, 3)``.
+        masses: Mass array of shape ``(Nbody,)``.
+        nitr: Number of Newton-Raphson iterations.
 
-        Returns:
-            transit times (1D flattened array)
-
+    Returns:
+        Transit times as a one-dimensional array.
     """
     tc, _ = _find_transit_newton_core(
         pidxarr, tcobsarr, t, xvjac, masses, nitr)
@@ -219,134 +252,143 @@ def find_transit_times_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
 
 
 def find_transit_times_fast(pidxarr, tcobsarr, t, xvjac, masses):
-    """find transit times for all planets using fast algorithm
+    """Find transit times for all requested transits using the fast algorithm.
 
-        Args:
-            pidxarr: array of orbit index starting from 0 (Ntransit,)
-            tcobsarray: flattened array of observed transit times (Ntransit,)
-            t: times (Nstep,)
-            xvjac: Jacobi positions and velocities (Nstep, x or v, Norbit, xyz)
-            masses: masses of the bodies (Nbody,)
+    Args:
+        pidxarr: Orbit indices starting from 0, with shape ``(Ntransit,)``.
+        tcobsarr: Flattened array of observed transit times of shape
+            ``(Ntransit,)``.
+        t: Time array of shape ``(Nstep,)``.
+        xvjac: Jacobi positions and velocities of shape
+            ``(Nstep, 2, Norbit, 3)``.
+        masses: Mass array of shape ``(Nbody,)``.
 
-        Returns:
-            transit times (1D flattened array)
-
+    Returns:
+        Transit times as a one-dimensional array.
     """
-    tc = _find_transit_time_fast_core(pidxarr, tcobsarr, t, xvjac, masses)
-    return tc
+    return _find_transit_times_fast_core(pidxarr, tcobsarr, t, xvjac, masses)
 
 
 def find_transit_params_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=5):
-    """find transit times and phase-space coordinates for all planets
+    """Find transit times and phase-space states using Newton refinement.
 
-        Args:
-            pidxarr: array of orbit index starting from 0 (Ntransit,)
-            tcobsarray: flattened array of observed transit times (Ntransit,)
-            t: times (Nstep,)
-            xvjac: Jacobi positions and velocities (Nstep, x or v, Norbit, xyz)
-            masses: masses of the bodies (Nbody,)
-            nitr: number of Newton-Raphson iterations
+    Args:
+        pidxarr: Orbit indices starting from 0, with shape ``(Ntransit,)``.
+        tcobsarr: Flattened array of observed transit times of shape
+            ``(Ntransit,)``.
+        t: Time array of shape ``(Nstep,)``.
+        xvjac: Jacobi positions and velocities of shape
+            ``(Nstep, 2, Norbit, 3)``.
+        masses: Mass array of shape ``(Nbody,)``.
+        nitr: Number of Newton-Raphson iterations.
 
-        Returns:
-            tuple:
-                - transit times (1D flattened array)
-                - positions, velocities, and NR step after the last iteration
-
+    Returns:
+        Tuple containing
+            - transit times as a one-dimensional array, and
+            - positions, velocities, and Newton steps from the final iteration.
     """
     return _find_transit_newton_core(pidxarr, tcobsarr, t, xvjac, masses, nitr)
 
 
 def find_transit_params_fast(pidxarr, tcobsarr, t, xvjac, masses):
-    """find transit times and phase-space coordinates for all planets using fast algorithm
+    """Find transit times and phase-space states using the fast algorithm.
 
-        Args:
-            pidxarr: array of orbit index starting from 0 (Ntransit,)
-            tcobsarray: flattened array of observed transit times (Ntransit,)
-            t: times (Nstep,)
-            xvjac: Jacobi positions and velocities (Nstep, x or v, Norbit, xyz)
-            masses: masses of the bodies (Nbody,)
+    Args:
+        pidxarr: Orbit indices starting from 0, with shape ``(Ntransit,)``.
+        tcobsarr: Flattened array of observed transit times of shape
+            ``(Ntransit,)``.
+        t: Time array of shape ``(Nstep,)``.
+        xvjac: Jacobi positions and velocities of shape
+            ``(Nstep, 2, Norbit, 3)``.
+        masses: Mass array of shape ``(Nbody,)``.
 
-        Returns:
-            tuple:
-                - transit times (1D flattened array)
-                - positions, velocities, and NR step after the last iteration
-
+    Returns:
+        Tuple containing
+            - transit times as a one-dimensional array, and
+            - positions, velocities, and the time corrections evaluated at
+              ``tcobsarr``.
     """
     return _find_transit_params_fast_core(pidxarr, tcobsarr, t, xvjac, masses)
 
 
-""" TTVFast algorithm """
+"""TTVFast algorithm."""
 
 
-def get_elements(x, v, gm):
-    """get elements
+def _get_elements(x, v, gm):
+    """Compute orbital quantities used by the TTVFast interpolation step.
 
-        Args:
-            x: positions (Norbit, xyz)
-            v: velocities (Norbit, xyz)
-            gm: 'GM' in Kepler's 3rd law
+    Args:
+        x: Positions of shape ``(Norbit, 3)``.
+        v: Velocities of shape ``(Norbit, 3)``.
+        gm: ``GM`` for each orbit.
 
-        Returns:
-            tuple:
-                - n: mean motion
-                - ecosE0, esinE0: eccentricity and eccentric anomaly
-                - a/r0: semi-major axis divided by |x|
-
+    Returns:
+        Tuple containing the mean motion, ``e cos E0``, ``e sin E0``, and
+        ``a / r0``.
     """
-    r0 = jnp.sqrt(jnp.sum(x*x, axis=1))
-    v0s = jnp.sum(v*v, axis=1)
-    u = jnp.sum(x*v, axis=1)
-    a = 1. / (2./r0 - v0s/gm)
+    r0 = jnp.sqrt(jnp.sum(x * x, axis=1))
+    v0s = jnp.sum(v * v, axis=1)
+    u = jnp.sum(x * v, axis=1)
+    a = 1.0 / (2.0 / r0 - v0s / gm)
 
-    n = jnp.sqrt(gm / (a*a*a))
-    ecosE0, esinE0 = 1. - r0 / a, u / (n*a*a)
+    n = jnp.sqrt(gm / (a * a * a))
+    ecosE0, esinE0 = 1.0 - r0 / a, u / (n * a * a)
 
-    return n, ecosE0, esinE0, a/r0
+    return n, ecosE0, esinE0, a / r0
 
 
-def find_transit_times_kepler(xast, vast, kast, dt, nitr):
-    """find transit times via interpolation
+def _find_transit_times_kepler(xast, vast, kast, dt, nitr):
+    """Find transit times via the TTVFast interpolation scheme.
 
-        Note:
-            This function is adapted from TTVFast https://github.com/kdeck/TTVFast, original scheme developed by Nesvorny et al. (2013, ApJ 777,3)
+    Note:
+        This function is adapted from TTVFast
+        https://github.com/kdeck/TTVFast, based on the scheme developed by
+        Nesvorny et al. (2013, ApJ, 777, 3).
 
-        Args:
-            xast: astrocentric positions (Norbit, xyz)
-            vast: astrocentric velocities (Norbit, xyz)
-            kast: astrocentric GM
-            dt: integration time step
+    Args:
+        xast: Astrocentric positions of shape ``(Norbit, 3)``.
+        vast: Astrocentric velocities of shape ``(Norbit, 3)``.
+        kast: Astrocentric ``GM``.
+        dt: Integration time step.
+        nitr: Number of iterations used in the interpolation solve.
 
-        Returns:
-            time to the transit center
-
+    Returns:
+        Time to the transit center.
     """
-    n, ecosE0, esinE0, a_r0 = get_elements(xast, vast, kast)
-    rsquared = jnp.sum(xast[:, :2]*xast[:, :2], axis=1)
-    vsquared = jnp.sum(vast[:, :2]*vast[:, :2], axis=1)
-    xdotv = jnp.sum(xast[:, :2]*vast[:, :2], axis=1)
+    n, ecosE0, esinE0, a_r0 = _get_elements(xast, vast, kast)
+    rsquared = jnp.sum(xast[:, :2] * xast[:, :2], axis=1)
+    vsquared = jnp.sum(vast[:, :2] * vast[:, :2], axis=1)
+    xdotv = jnp.sum(xast[:, :2] * vast[:, :2], axis=1)
 
-    def dEstep_transit(dE, i):
+    def dEstep_transit(dE, _):
         x2 = dE / 2.0
         sx2, cx2 = jnp.sin(x2), jnp.cos(x2)
-        f = 1.0 - a_r0*2.0*sx2*sx2
-        sx, cx = 2.0*sx2*cx2, cx2*cx2 - sx2*sx2
-        g = (2.0*sx2*(esinE0*sx2 + cx2/a_r0))/n
-        fp = 1.0 - cx*ecosE0 + sx*esinE0
-        fdot = -(a_r0/fp)*n*sx
-        fp2 = sx*ecosE0 + cx*esinE0
-        gdot = 1.0-2.0*sx2*sx2/fp
+        f = 1.0 - a_r0 * 2.0 * sx2 * sx2
+        sx, cx = 2.0 * sx2 * cx2, cx2 * cx2 - sx2 * sx2
+        g = (2.0 * sx2 * (esinE0 * sx2 + cx2 / a_r0)) / n
+        fp = 1.0 - cx * ecosE0 + sx * esinE0
+        fdot = -(a_r0 / fp) * n * sx
+        fp2 = sx * ecosE0 + cx * esinE0
+        gdot = 1.0 - 2.0 * sx2 * sx2 / fp
 
-        dgdotdz = -sx/fp+2.0*sx2*sx2/fp/fp*fp2
-        dfdz = -a_r0*sx
-        dgdz = 1.0/n*(sx*esinE0-(ecosE0-1.0)*cx)
-        dfdotdz = -n*a_r0/fp*(cx+sx/fp*fp2)
+        dgdotdz = -sx / fp + 2.0 * sx2 * sx2 / fp / fp * fp2
+        dfdz = -a_r0 * sx
+        dgdz = (sx * esinE0 - (ecosE0 - 1.0) * cx) / n
+        dfdotdz = -n * a_r0 / fp * (cx + sx / fp * fp2)
 
-        dotproduct = f*fdot*(rsquared)+g*gdot*(vsquared) + \
-            (f*gdot+g*fdot)*(xdotv)
-        dotproductderiv = dfdz*(gdot*xdotv+fdot*rsquared)+dfdotdz*(
-            f*rsquared+g*xdotv)+dgdz*(fdot*xdotv+gdot*vsquared)+dgdotdz*(g*vsquared+f*xdotv)
+        dotproduct = (
+            f * fdot * rsquared
+            + g * gdot * vsquared
+            + (f * gdot + g * fdot) * xdotv
+        )
+        dotproductderiv = (
+            dfdz * (gdot * xdotv + fdot * rsquared)
+            + dfdotdz * (f * rsquared + g * xdotv)
+            + dgdz * (fdot * xdotv + gdot * vsquared)
+            + dgdotdz * (g * vsquared + f * xdotv)
+        )
 
-        return dE - dotproduct/dotproductderiv, None
+        return dE - dotproduct / dotproductderiv, None
 
     dE0 = n * dt / 2.0
     dE, _ = scan(dEstep_transit, dE0, jnp.arange(nitr))
@@ -358,56 +400,66 @@ def find_transit_times_kepler(xast, vast, kast, dt, nitr):
     return transitM / n
 
 
-# map along the transit axis
-find_transit_times_kepler_map = vmap(
-    find_transit_times_kepler, (0, 0, 0, None, None), 0)
+_find_transit_times_kepler_map = vmap(
+    _find_transit_times_kepler, (0, 0, 0, None, None), 0
+)
 
 
 def find_transit_times_kepler_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=3):
-    """find transit times for all planets via interpolation
+    """Find transit times via the legacy TTVFast-style interpolation scheme.
 
-        Note:
-            Bug: this function sometimes fails for large dt for reason yet to be understood.
+    Note:
+        This function is kept for backward compatibility and will be deprecated. 
+        It may fail for large ``dt``.
 
-        Args:
-            pidxarr: array of orbit index starting from 0 (Ntransit,)
-            tcobsarray: flattened array of observed transit times (Ntransit,)
-            t: times (Nstep,)
-            xvjac: Jacobi positions and velocities (Nstep, x or v, Norbit, xyz)
-            masses: masses of the bodies (Nbody,)
-            nitr: number of Newton-Raphson iterations
+    Args:
+        pidxarr: Orbit indices starting from 0, with shape ``(Ntransit,)``.
+        tcobsarr: Flattened array of observed transit times of shape
+            ``(Ntransit,)``.
+        t: Time array of shape ``(Nstep,)``.
+        xvjac: Jacobi positions and velocities of shape
+            ``(Nstep, 2, Norbit, 3)``.
+        masses: Mass array of shape ``(Nbody,)``.
+        nitr: Number of iterations used in the Kepler interpolation step.
 
-        Returns:
-            transit times (1D flattened array)
-
+    Returns:
+        Transit times as a one-dimensional array.
     """
     xjac, vjac = xvjac[:, 0, :, :], xvjac[:, 1, :, :]
-    tcflag = get_tcflag(xjac, vjac)
-    tcidx = find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
+    tcflag = _get_tcflag(xjac, vjac)
+    tcidx = _find_tc_idx_map(t, tcflag, pidxarr, tcobsarr).ravel()
 
-    tc_ahead, tc_behind = t[1:][tcidx], t[1:][tcidx-1]
-    xvjac_ahead, xvjac_behind = xvjac[1:][tcidx], xvjac[1:][tcidx-1]
+    tc_ahead, tc_behind = t[1:][tcidx], t[1:][tcidx - 1]
+    xvjac_ahead, xvjac_behind = xvjac[1:][tcidx], xvjac[1:][tcidx - 1]
 
-    # bring back the system by dt/2 so that the systems are at conclusions of the symplectic step
-    # if the transit is not bracketed after this shift, advance the system by dt again
+    # Bring back the system by dt/2 so that the states are at the
+    # conclusions of the symplectic step. If the transit is not bracketed
+    # after this shift, advance the system by dt again.
     dt = jnp.diff(t)[0]
     dt2 = 0.5 * dt
     xjac_ahead_mindt2, vjac_ahead_mindt2 = kepler_step_map(
-        xvjac_ahead[:, 0, :, :], xvjac_ahead[:, 1, :, :], masses, -dt2)
+        xvjac_ahead[:, 0, :, :], xvjac_ahead[:, 1, :, :], masses, -dt2
+    )
     xjac_behind_mindt2, vjac_behind_mindt2 = kepler_step_map(
-        xvjac_behind[:, 0, :, :], xvjac_behind[:, 1, :, :], masses, -dt2)
+        xvjac_behind[:, 0, :, :], xvjac_behind[:, 1, :, :], masses, -dt2
+    )
     xjac_ahead_plusdt2, vjac_ahead_plusdt2 = kick_kepler_map(
-        xvjac_ahead[:, 0, :, :], xvjac_ahead[:, 1, :, :], masses, dt2)
-    tcflag_mindt2 = get_g_map(xjac_ahead_mindt2, vjac_ahead_mindt2,
-                              pidxarr) > 0.  # True if still bracketing the transit
+        xvjac_ahead[:, 0, :, :], xvjac_ahead[:, 1, :, :], masses, dt2
+    )
+    tcflag_mindt2 = _get_g_map(
+        xjac_ahead_mindt2, vjac_ahead_mindt2, pidxarr) > 0.0
 
-    def func(x, y, z): return jnp.where(x, y, z)
-    func_map = vmap(func, (0, 0, 0), 0)
-    xjac_ahead = func_map(tcflag_mindt2, xjac_ahead_mindt2, xjac_ahead_plusdt2)
-    xjac_behind = func_map(
+    def _select(mask, left, right):
+        return jnp.where(mask, left, right)
+
+    select_map = vmap(_select, (0, 0, 0), 0)
+    xjac_ahead = select_map(
+        tcflag_mindt2, xjac_ahead_mindt2, xjac_ahead_plusdt2)
+    xjac_behind = select_map(
         tcflag_mindt2, xjac_behind_mindt2, xjac_ahead_mindt2)
-    vjac_ahead = func_map(tcflag_mindt2, vjac_ahead_mindt2, vjac_ahead_plusdt2)
-    vjac_behind = func_map(
+    vjac_ahead = select_map(
+        tcflag_mindt2, vjac_ahead_mindt2, vjac_ahead_plusdt2)
+    vjac_behind = select_map(
         tcflag_mindt2, vjac_behind_mindt2, vjac_ahead_mindt2)
     tc_ahead = jnp.where(tcflag_mindt2, tc_ahead - dt2, tc_ahead + dt2)
     tc_behind = jnp.where(tcflag_mindt2, tc_behind - dt2, tc_behind + dt2)
@@ -420,12 +472,18 @@ def find_transit_times_kepler_all(pidxarr, tcobsarr, t, xvjac, masses, nitr=3):
     kast = G * (masses[1:] + masses[0])
     kastarr = kast[pidxarr]
 
-    tau_ahead = tc_ahead + jnp.diag(find_transit_times_kepler_map(
-        xast_ahead, vast_ahead, kastarr, -dt, nitr)[:, pidxarr])
-    tau_behind = tc_behind + jnp.diag(find_transit_times_kepler_map(
-        xast_behind, vast_behind, kastarr, dt, nitr)[:, pidxarr])
+    tau_ahead = tc_ahead + jnp.diag(
+        _find_transit_times_kepler_map(
+            xast_ahead, vast_ahead, kastarr, -dt, nitr)[:, pidxarr]
+    )
+    tau_behind = tc_behind + jnp.diag(
+        _find_transit_times_kepler_map(
+            xast_behind, vast_behind, kastarr, dt, nitr)[:, pidxarr]
+    )
 
-    tc = ((tau_behind - tc_behind) * tau_ahead + (tc_ahead - tau_ahead)
-          * tau_behind) / (dt + tau_behind - tau_ahead)
+    tc = (
+        (tau_behind - tc_behind) * tau_ahead
+        + (tc_ahead - tau_ahead) * tau_behind
+    ) / (dt + tau_behind - tau_ahead)
 
     return tc
