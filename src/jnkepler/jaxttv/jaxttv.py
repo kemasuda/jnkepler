@@ -10,7 +10,11 @@ from functools import partial
 from copy import deepcopy
 from .utils import *
 from .conversion import *
-from .findtransit import find_transit_times_all, find_transit_times_kepler_all
+from .findtransit import (
+    find_transit_times_all,
+    find_transit_times_fast,
+    find_transit_times_kepler_all,
+)
 from .symplectic import integrate_xv, kepler_step_map
 from .hermite4 import integrate_xv as integrate_xv_hermite4
 from .rv import *
@@ -42,7 +46,59 @@ class Nbody:
 class JaxTTV(Nbody):
     """main class for TTV analysis"""
 
-    def __init__(self, t_start, t_end, dt, tcobs, p_init, errorobs=None, print_info=True, nitr_kepler=10, transit_time_method='newton-raphson', nitr_transit=5):
+    @property
+    def transit_time_method(self):
+        """Transit-time algorithm used for observed transits."""
+        return self._transit_time_method
+
+    @transit_time_method.setter
+    def transit_time_method(self, method):
+        """Set and canonicalize the transit-time algorithm name."""
+        if method == "newton-raphson":
+            warnings.warn(
+                "'newton-raphson' is deprecated; use 'newton' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            method = "newton"
+        elif method == "interpolation":
+            warnings.warn(
+                "'interpolation' is deprecated; use 'kepler' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            method = "kepler"
+
+        if method not in ("fast", "newton", "kepler"):
+            raise ValueError(
+                "transit_time_method must be one of 'fast', 'newton', or 'kepler'."
+            )
+
+        if method == "kepler":
+            warnings.warn(
+                "transit_time_method='kepler' is kept for backward compatibility "
+                "and is not well tested."
+            )
+
+        self._transit_time_method = method
+
+    def _compute_transit_times(self, orbit_idx, tcobs1d, times, xvjac, masses, method=None):
+        """Dispatch transit-time computation to the requested algorithm."""
+        if method is None:
+            method = self.transit_time_method
+
+        if method == 'newton':
+            return find_transit_times_all(
+                orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
+        if method == 'fast':
+            return find_transit_times_fast(
+                orbit_idx, tcobs1d, times, xvjac, masses)
+        if method == 'kepler':
+            return find_transit_times_kepler_all(
+                orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+        raise ValueError(f"Unsupported transit_time_method: {method}")
+
+    def __init__(self, t_start, t_end, dt, tcobs, p_init, errorobs=None, print_info=True, nitr_kepler=10, transit_time_method='fast', nitr_transit=5):
         """initialization
 
             Args:
@@ -50,12 +106,18 @@ class JaxTTV(Nbody):
                 t_end: end time of integration
                 dt: integration time step (day)
                 nitr_kepler: number of iterations in Kepler steps
-                transit_time_method: Newton-Raphson or interpolation (latter not fully tested)
-                nitr_transit: number of iterations in transit-finding loop (only for Newton-Raphson)
+                transit_time_method: algorithm used for transit-time computation.
+                    Supported values are ``"fast"`` (default), ``"newton"``,
+                    and ``"kepler"``. Legacy aliases ``"newton-raphson"``
+                    and ``"interpolation"`` are also accepted.
+                nitr_transit: number of iterations in the Newton transit-finding
+                    loop (used only for the Newton method)
 
             Attributes:
-                transit_time_method: algorithm for transit time computation 
-                nit_transit: number of Newton-Raphson iterations in computing transit times
+                transit_time_method: algorithm for transit-time computation for
+                    observed transits
+                nitr_transit: number of Newton iterations in transit-time
+                    computation
                 nplanet: number of transiting planets
                 p_init: initial guess for mean orbital periods for tracking transit epochs
                 tcobs: list of observed transit time arrays
@@ -72,9 +134,6 @@ class JaxTTV(Nbody):
         tcobs, tcobs_flatten, nplanet, p_init, errorobs, errorobs_flatten, pidx, tcobs_linear \
             = self.set_tcobs(tcobs, p_init, errorobs=errorobs, print_info=print_info)
 
-        if transit_time_method != "newton-raphson":
-            warnings.warn(
-                "transit_time_method other than newton-raphson is not well tested.")
         self.transit_time_method = transit_time_method
         self.nitr_transit = nitr_transit
         self.nplanet = nplanet
@@ -176,8 +235,10 @@ class JaxTTV(Nbody):
         """compute model transit times 
 
             Note:
-                This function returns only transit times that are closest to the observed ones.
-                To get all the transit times, use get_transit_times_all instead.
+                This function returns only transit times that are closest to the
+                observed ones. The algorithm is controlled by
+                ``self.transit_time_method``. To get all the transit times, use
+                ``get_transit_times_all`` instead.
 
             Args:
                 par_dict: dict containing parameters
@@ -202,18 +263,17 @@ class JaxTTV(Nbody):
             orbit_idx = transit_orbit_idx[self.pidx.astype(
                 int) - 1].astype(int)
         tcobs1d = self.tcobs_flatten  # 1D array of observed transit times
-        if self.transit_time_method == 'newton-raphson':
-            transit_times = find_transit_times_all(
-                orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
-        else:
-            transit_times = find_transit_times_kepler_all(
-                orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+        transit_times = self._compute_transit_times(
+            orbit_idx, tcobs1d, times, xvjac, masses)
         ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
         return transit_times, ediff
 
     @partial(jit, static_argnums=(0,))
     def get_transit_times_and_rvs_obs(self, par_dict, times_rv, transit_orbit_idx=None):
         """compute model transit times and stellar RVs
+
+            Note:
+                The transit times are computed using ``self.transit_time_method``.
 
             Args:
                 par_dict: dict containing parameters
@@ -240,12 +300,8 @@ class JaxTTV(Nbody):
             orbit_idx = transit_orbit_idx[self.pidx.astype(
                 int) - 1].astype(int)
         tcobs1d = self.tcobs_flatten  # 1D array of observed transit times
-        if self.transit_time_method == 'newton-raphson':
-            transit_times = find_transit_times_all(
-                orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
-        else:
-            transit_times = find_transit_times_kepler_all(
-                orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+        transit_times = self._compute_transit_times(
+            orbit_idx, tcobs1d, times, xvjac, masses)
         ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
 
         nbodyrv = rv_from_xvjac(times_rv, times, xvjac, masses)
@@ -297,6 +353,10 @@ class JaxTTV(Nbody):
     def get_transit_times_all(self, par_dict, t_start=None, t_end=None, dt=None, transit_orbit_idx=None):
         """compute all model transit times between t_start and t_end
 
+            Note:
+                This function always uses the Newton transit finder, regardless
+                of ``self.transit_time_method``.
+
             Args:
                 par_dict: dict containing parameters
 
@@ -325,12 +385,8 @@ class JaxTTV(Nbody):
         else:
             orbit_idx = transit_orbit_idx[_orbit_idx.astype(
                 int) - 1].astype(int)
-        if self.transit_time_method == 'newton-raphson':
-            transit_times = find_transit_times_all(
-                orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_transit)
-        else:
-            transit_times = find_transit_times_kepler_all(
-                orbit_idx, tcobs1d, times, xvjac, masses, nitr=self.nitr_kepler)
+        transit_times = self._compute_transit_times(
+            orbit_idx, tcobs1d, times, xvjac, masses, method="newton")
         ediff = get_energy_diff_jac(xvjac, masses, -0.5*dt)
 
         return transit_times, ediff, _orbit_idx.astype(int) - 1
@@ -431,16 +487,27 @@ class JaxTTV(Nbody):
         return {'mean': np.mean(res), 'sd': np.std(res)}, params_st
 
     def check_timing_precision(self, par_dict, dtfrac=1e-3, nitr_transit=10, nitr_kepler=10):
-        """compare get_ttvs output with that computed with a smaller timestep to check the precision
+        """Compare transit times against a smaller-step Newton calculation.
+
+            Note:
+                The baseline calculation uses the current
+                ``self.transit_time_method`` at the nominal timestep, while the
+                smaller-step reference always uses the Newton transit finder.
 
             Args:
                 params: JaxTTV parameter array
                 dtfrac: (innermost period) * dtfrac is used for the comparison integration
+                nitr_transit: number of Newton iterations for the smaller-step
+                    reference calculation
+                nitr_kepler: number of Kepler iterations for the smaller-step
+                    reference calculation
 
             Returns:
                 tuple:
-                    - model transit times from get_transit_times_obs
-                    - model transit times using a smaller timestep
+                    - model transit times from the baseline calculation at the
+                      nominal timestep
+                    - model transit times from the smaller-step Newton
+                      calculation
 
         """
         tc, de = self.get_transit_times_obs(par_dict)
@@ -454,6 +521,7 @@ class JaxTTV(Nbody):
         self2.times = jnp.arange(self2.t_start, self2.t_end, self2.dt)
         self2.nitr_kepler = nitr_kepler
         self2.nitr_transit = nitr_transit
+        self2.transit_time_method = "newton"
         tc2, de2 = self2.get_transit_times_obs(par_dict)
         intname = 'symplectic'
         print("# fractional energy error (%s, dt=%.2e): %.2e" %

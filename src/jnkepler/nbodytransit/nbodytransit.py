@@ -9,7 +9,7 @@ from functools import partial
 from ..jaxttv import JaxTTV
 from ..jaxttv.utils import *
 from ..jaxttv.conversion import *
-from ..jaxttv.findtransit import *
+from ..jaxttv.findtransit import find_transit_params_all, find_transit_params_fast
 from ..jaxttv.symplectic import integrate_xv, kepler_step_map
 from ..jaxttv.hermite4 import integrate_xv as integrate_xv_hermite4
 from ..jaxttv.rv import *
@@ -93,8 +93,14 @@ class NbodyTransit(JaxTTV):
             xjac0, vjac0, masses, self.times, nitr=self.nitr_kepler)  # integration
         pidxarr = self.pidx.astype(int)  # idx for planet, starting from 1
         tcobs1d = self.tcobs_flatten
-        tc, (xcm, vcm, _) = find_transit_params_all(
-            pidxarr-1, tcobs1d, times, xvjac, masses)
+        if self.transit_time_method == "newton":
+            tc, (xcm, vcm, _) = find_transit_params_all(
+                pidxarr - 1, tcobs1d, times, xvjac, masses
+            )
+        else:
+            tc, (xcm, vcm, _) = find_transit_params_fast(
+                pidxarr - 1, tcobs1d, times, xvjac, masses
+            )
         xsky_tc, vsky_tc = get_xvast_map(xcm, vcm, pidxarr)
         return tc, xsky_tc, vsky_tc, times, xvjac, masses
 
