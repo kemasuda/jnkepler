@@ -163,7 +163,8 @@ def ttv_optim_least_squares(
         param_bounds_: bounds for parameters, dict of {key: (lower, upper)}
         pinit: initial guess of parameters (dict)
         n_start: number of initial guesses when pinit is not provided.
-            If pinit is given, a single optimization is run.
+            If pinit is given, a single optimization is run. Otherwise,
+            multi-start randomizes only the initial planet masses.
         loss: determines the loss in scipy.optimize.least_squares.
             Using robust loss functions (e.g., 'soft_l1', 'huber') sometimes
             helps to mitigate the impact of outliers.
