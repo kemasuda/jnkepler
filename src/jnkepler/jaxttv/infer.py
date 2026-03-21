@@ -6,6 +6,8 @@ __all__ = [
     "ttv_optim_curve_fit",
     "scale_pdic",
     "unscale_pdic",
+    "get_flat_param_index",
+    "make_phase_to_tic_transform",
 ]
 
 from jax import jacfwd, jit
