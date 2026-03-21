@@ -302,8 +302,12 @@ def ttv_optim_least_squares(
         chi2_fin = float(np.sum(res.fun**2))
         cost_fin = float(res.cost)
 
+        pmass0_str = np.array2string(
+            np.exp(p0[mass_slice])/3.003e-6, precision=1, separator=", ")
+
         print(
-            f"# start {i}: chi2={chi2_init:.2f} --> {chi2_fin:.2f}, "
+            f"# start {i}: initial pmass={pmass0_str}, "
+            f"chi2={chi2_init:.2f} --> {chi2_fin:.2f}, "
             f"cost={cost_fin:.2f}, nfev={res.nfev}, elapsed={dt:.1f} s"
         )
 
