@@ -310,7 +310,25 @@ def ttv_optim_least_squares(
     npl = len(param_bounds["period"][0])
     if npl != jttv.nplanet:
         print(f"# {npl - jttv.nplanet} non-transiting planets.")
-        assert len(transit_orbit_idx) == jttv.nplanet
+
+        if transit_orbit_idx is None:
+            raise ValueError(
+                "transit_orbit_idx must be provided when non-transiting planets "
+                "are included."
+            )
+
+        transit_orbit_idx = np.asarray(transit_orbit_idx)
+
+        if transit_orbit_idx.ndim != 1:
+            raise ValueError(
+                f"transit_orbit_idx must be 1D, got shape {transit_orbit_idx.shape}."
+            )
+
+        if len(transit_orbit_idx) != jttv.nplanet:
+            raise ValueError(
+                f"transit_orbit_idx must have length {jttv.nplanet}, "
+                f"got {len(transit_orbit_idx)}."
+            )
 
     # keys to optimize
     if "cosi" not in param_bounds.keys() or "lnode" not in param_bounds.keys():
