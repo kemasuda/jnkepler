@@ -591,15 +591,14 @@ def ttv_optim_least_squares(
         max_abs_dt = float(np.max(np.abs(tc_fast - tc_newton)))
 
         if max_abs_dt > fast_validation_threshold:
-            warnings.warn(
-                "Optimization used transit_time_method='fast', but the final "
-                "model differs from a Newton-based transit-time evaluation by "
-                f"max_abs_dt={max_abs_dt:.3e} d > "
-                f"{fast_validation_threshold:.3e} d. "
-                "This result may be unreliable; consider rerunning with "
-                "transit_time_method='newton'.",
-                RuntimeWarning,
-                stacklevel=2,
+            raise RuntimeError(
+                "Optimization with transit_time_method='fast' failed validation: "
+                "the final model differs from a Newton-based transit-time evaluation by "
+                f"max_abs_dt={max_abs_dt:.2e} d, which exceeds the median timing error "
+                f"({fast_validation_threshold:.2e} d). "
+                "Consider rerunning the optimization with transit_time_method='newton'. "
+                "Once a reliable solution has been found, transit_time_method='fast' can "
+                "still be used for subsequent NUTS initialization and sampling."
             )
 
     if plot:
