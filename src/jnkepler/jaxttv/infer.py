@@ -565,6 +565,43 @@ def ttv_optim_least_squares(
     )
     pdic_opt = params_to_dict(best_popt_model, npl, keys)
 
+    if transit_time_method == "fast":
+        fast_validation_threshold = float(
+            np.median(np.asarray(jttv.errorobs_flatten, dtype=float)))
+
+        tc_fast = np.asarray(
+            jttv.get_transit_times_obs(
+                pdic_opt,
+                transit_orbit_idx=transit_orbit_idx,
+            )[0],
+            dtype=float,
+        )
+
+        jttv_newton = deepcopy(jttv)
+        jttv_newton.transit_time_method = "newton"
+
+        tc_newton = np.asarray(
+            jttv_newton.get_transit_times_obs(
+                pdic_opt,
+                transit_orbit_idx=transit_orbit_idx,
+            )[0],
+            dtype=float,
+        )
+
+        max_abs_dt = float(np.max(np.abs(tc_fast - tc_newton)))
+
+        if max_abs_dt > fast_validation_threshold:
+            warnings.warn(
+                "Optimization used transit_time_method='fast', but the final "
+                "model differs from a Newton-based transit-time evaluation by "
+                f"max_abs_dt={max_abs_dt:.3e} d > "
+                f"{fast_validation_threshold:.3e} d. "
+                "This result may be unreliable; consider rerunning with "
+                "transit_time_method='newton'.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
     if plot:
         tcall = jttv.get_transit_times_all_list(
             pdic_opt,
