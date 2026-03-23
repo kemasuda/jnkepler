@@ -273,6 +273,7 @@ def ttv_optim_least_squares(
     random_state=None,
     max_nfev=None,
     param_transform=None,
+    return_optspace=False,
 ):
     """Simple TTV fit using scipy.optimize.least_squares.
 
@@ -324,9 +325,16 @@ def ttv_optim_least_squares(
             This is useful, for example, when optimizing orbital phase
             instead of time of inferior conjunction for a non-transiting planet.
             If jac=True, this should be JAX-compatible.
+        return_optspace: if True, also return the best-fit parameter dictionary
+            in optimizer space as a second output. This is useful for warm
+            starts when param_transform is used.
 
     Returns:
-        dict: best-fit JaxTTV parameter dictionary
+        dict or tuple:
+            - If return_optspace=False (default), returns the best-fit JaxTTV
+              parameter dictionary in model space.
+            - If return_optspace=True, returns
+              (pdic_opt_modelspace, pdic_opt_optspace).
     """
     param_bounds = deepcopy(param_bounds_)
 
@@ -609,6 +617,12 @@ def ttv_optim_least_squares(
         jttv.plot_model(tcall, marker=".", save=save)
 
     pdic_opt["pmass"] = jnp.exp(pdic_opt["lnpmass"])
+
+    if return_optspace:
+        pdic_optspace = params_to_dict(best_popt, npl, keys)
+        pdic_optspace["pmass"] = jnp.exp(pdic_optspace["lnpmass"])
+        return pdic_opt, pdic_optspace
+
     return pdic_opt
 
 
