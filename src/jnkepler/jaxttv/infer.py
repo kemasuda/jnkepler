@@ -10,7 +10,7 @@ __all__ = [
     "make_phase_to_tic_transform",
 ]
 
-from jax import jacfwd, jit
+from jax import jacfwd, jacrev, jit
 import numpy as np
 import jax.numpy as jnp
 from scipy.optimize import least_squares
@@ -112,16 +112,29 @@ def unscale_pdic(pdic_scaled, param_bounds):
     return pdic
 
 
-def _get_cached_residual_functions(jttv, npl, keys, transit_orbit_idx=None, jac=False):
+def _get_cached_residual_functions(
+    jttv,
+    npl,
+    keys,
+    transit_orbit_idx=None,
+    jac=False,
+    diff_mode="fwd",
+):
     """Return cached jitted residual / jacobian functions for repeated fits."""
     if not hasattr(jttv, "_lsq_cache"):
         jttv._lsq_cache = {}
+
+    if diff_mode not in ("fwd", "rev"):
+        raise ValueError(
+            f"diff_mode must be 'fwd' or 'rev', got {diff_mode!r}"
+        )
 
     cache_key = (
         npl,
         tuple(keys),
         None if transit_orbit_idx is None else tuple(transit_orbit_idx),
         bool(jac),
+        diff_mode,
     )
 
     if cache_key not in jttv._lsq_cache:
@@ -136,7 +149,14 @@ def _get_cached_residual_functions(jttv, npl, keys, transit_orbit_idx=None, jac=
             return (_model(p_flat) - jttv.tcobs_flatten) / jttv.errorobs_flatten
 
         resid = jit(_resid)
-        jac_resid = jit(jacfwd(_resid)) if jac else None
+
+        if jac:
+            if diff_mode == "fwd":
+                jac_resid = jit(jacfwd(_resid))
+            else:
+                jac_resid = jit(jacrev(_resid))
+        else:
+            jac_resid = None
 
         jttv._lsq_cache[cache_key] = {
             "resid": resid,
@@ -246,6 +266,7 @@ def ttv_optim_least_squares(
     loss="linear",
     loss_kwargs=None,
     jac=False,
+    diff_mode="auto",
     plot=True,
     save=None,
     transit_orbit_idx=None,
@@ -282,9 +303,15 @@ def ttv_optim_least_squares(
             point, so least_squares.cost corresponds to the total NLL.
             For loss='linear', cost = 0.5 * chi2.
         jac: if True, use a JAX-based analytic Jacobian for the residual
-            function. This can reduce the number of optimizer iterations and
-            speed up repeated fits once the compiled function is cached, but
-            the first call may take longer due to JIT compilation.
+            function.
+        diff_mode: differentiation mode for the analytic Jacobian when
+            jac=True. Must be one of:
+              - 'auto': use 'fwd' for transit_time_method='fast' and
+                'rev' for transit_time_method='newton'
+              - 'rev'
+              - 'fwd'
+            Note: for transit_time_method='newton', 'fwd' is overridden to
+            'rev' because forward-mode differentiation may fail there.
         plot: if True, TTV models are plotted with data.
         save: path to save TTV plots.
         transit_orbit_idx: list of indices to specify which planets are
@@ -305,6 +332,28 @@ def ttv_optim_least_squares(
 
     if loss_kwargs is None:
         loss_kwargs = {}
+
+    if diff_mode not in ("auto", "rev", "fwd"):
+        raise ValueError(
+            f"diff_mode must be 'auto', 'rev', or 'fwd', got {diff_mode!r}"
+        )
+
+    # resolve differentiation mode
+    transit_time_method = jttv.transit_time_method
+
+    if diff_mode == "auto":
+        effective_diff_mode = (
+            "rev" if transit_time_method == "newton" else "fwd"
+        )
+    else:
+        effective_diff_mode = diff_mode
+
+    if jac and transit_time_method == "newton" and effective_diff_mode == "fwd":
+        warnings.warn(
+            "diff_mode='fwd' is not supported reliably with "
+            "transit_time_method='newton'; using diff_mode='rev' instead."
+        )
+        effective_diff_mode = "rev"
 
     # check non-transiting planets
     npl = len(param_bounds["period"][0])
@@ -367,6 +416,7 @@ def ttv_optim_least_squares(
         keys=keys,
         transit_orbit_idx=transit_orbit_idx,
         jac=jac,
+        diff_mode=effective_diff_mode,
     )
     resid_base = cache["resid"]
     jac_resid_base = cache["jac_resid"]
@@ -384,7 +434,10 @@ def ttv_optim_least_squares(
             jac_resid_jax = jac_resid_base
         else:
             # include chain rule through param_transform
-            jac_resid_jax = jax.jit(jax.jacfwd(resid_jax))
+            if effective_diff_mode == "rev":
+                jac_resid_jax = jax.jit(jax.jacrev(resid_jax))
+            else:
+                jac_resid_jax = jax.jit(jax.jacfwd(resid_jax))
 
     def resid_np(p):
         return np.array(resid_jax(jnp.asarray(p)), dtype=float, copy=True)
@@ -430,7 +483,11 @@ def ttv_optim_least_squares(
     best_chi2 = np.inf
 
     print(
-        f"# running least squares optimization (n_start={n_start_eff}, loss={loss})..."
+        "# running least squares optimization "
+        f"(n_start={n_start_eff}, loss={loss}, "
+        f"transit_time_method={transit_time_method}, "
+        f"jac={'on' if jac else 'off'}, "
+        f"diff_mode={effective_diff_mode if jac else 'n/a'})..."
     )
     t0_all = time.time()
 
