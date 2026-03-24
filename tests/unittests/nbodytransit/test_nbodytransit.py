@@ -84,10 +84,10 @@ def test_get_flux():
     nt.set_lcobs(times_lc)
     lc, ttv = nt.get_flux(par_dict)
 
-    lc_test = np.loadtxt(path/"kep51_lc_model.txt")
+    lc_test = np.loadtxt(path/"kep51_lc_model.txt") - 1.
 
-    assert lc == pytest.approx(lc_test-1.)
-    print("# max fractional difference:", np.max(np.abs(lc-lc_test)))
+    assert lc == pytest.approx(lc_test, abs=1e-8)
+    print("# max absolute difference:", np.max(np.abs(lc-lc_test)))
 
 
 @pytest.mark.skipif(not JAXOPLANET_INSTALLED, reason="jaxoplanet is not installed")
@@ -113,7 +113,6 @@ def test_get_flux_and_rv():
 
 
 if __name__ == '__main__':
-    # compute_testlc()
     test_get_xvsky_tc()
     test_get_flux()
     test_get_flux_and_rv()

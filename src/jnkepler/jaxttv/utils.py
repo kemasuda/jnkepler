@@ -3,7 +3,7 @@ Internal utilities for parameter conversion, initialization, and diagnostics.
 """
 __all__ = [
     "initialize_jacobi_xv", "get_energy_diff", "get_energy_diff_jac",
-    "params_to_elements", "elements_to_pdic", "convert_elements", "findidx_map", "params_to_dict", "dict_to_params", "em_to_dict"
+    "params_to_elements", "elements_to_pdic", "convert_elements", "find_nearest_idx", "find_nearest_idx_sorted", "params_to_dict", "dict_to_params", "em_to_dict"
 ]
 
 import numpy as np
@@ -322,7 +322,7 @@ def convert_elements(par_dict, t_epoch, WHsplit=False):
     return xv_to_elements(xjac, vjac, ki), masses
 
 
-def findidx_map(arr1, arr2):
+def find_nearest_idx(arr1, arr2):
     """pick up elements of arr1 nearest to each element in arr2
 
         Args:
@@ -336,3 +336,33 @@ def findidx_map(arr1, arr2):
     def func(arr1, val): return jnp.argmin(jnp.abs(arr1 - val))
     func_map = jit(vmap(func, (None, 0), 0))
     return func_map(arr1, arr2)
+
+
+def find_nearest_idx_sorted(arr1, arr2):
+    """Return indices in sorted `arr1` nearest to each value in `arr2`.
+
+    This implementation assumes `arr1` is sorted in ascending order and uses
+    binary search via `jnp.searchsorted` (O(len(arr2) * log(len(arr1)))).
+
+    Ties are resolved by choosing the left candidate.
+
+    Args:
+        arr1: 1D array sorted in ascending order.
+        arr2: 1D array of query values.
+
+    Returns:
+        1D integer array of indices `i` such that `arr1[i]` is the nearest value
+        to each element of `arr2`.
+    """
+    N = arr1.shape[0]
+    # insertion positions in [0, N]
+    i = jnp.searchsorted(arr1, arr2, side="left")
+
+    # clamp to valid neighbor indices
+    i1 = jnp.clip(i, 0, N - 1)      # right candidate
+    i0 = jnp.clip(i - 1, 0, N - 1)  # left candidate
+
+    # pick the nearer one (tie -> left)
+    d0 = jnp.abs(arr2 - arr1[i0])
+    d1 = jnp.abs(arr1[i1] - arr2)
+    return jnp.where(d0 <= d1, i0, i1)
