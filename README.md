@@ -39,9 +39,7 @@ If this is not done, `jnkepler` will issue a warning on import.
 
 ### *Note on the transit-finding algorithm (since v0.2.5)*
 
-In `JaxTTV.get_transit_times_obs`, the default transit-time solver is now `"fast"`. This method is optimized for efficient evaluation near the observed transit times, which is typically sufficient for inference because models far from
-the data have very low likelihood. For models that are substantially offset from the observed transit times, however, the fast method can be less accurate than the Newton-based method. Use `transit_time_method="newton"` when robust accuracy is needed in that regime.
-
+In `JaxTTV.get_transit_times_obs`, the default transit-time solver is now `"fast"`. This method is optimized for efficient evaluation near the observed transit times, which is typically sufficient for inference because models far from the data have very low likelihood. For models that are substantially offset from the observed transit times, however, the fast method can be less accurate than the Newton-based method. Use `transit_time_method="newton"` when robust accuracy is needed in that regime.
 
 ## Examples
 
