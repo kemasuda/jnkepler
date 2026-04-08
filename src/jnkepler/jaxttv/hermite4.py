@@ -32,11 +32,12 @@ def get_derivs(x, v, masses):
     x2jk = jnp.sum(xjk * xjk, axis=1)[:, None, :]
     xvjk = jnp.sum(xjk * vjk, axis=1)[:, None, :]
 
-    x2jk = jnp.where(x2jk != 0., x2jk, jnp.inf)
-    x2jkinv = 1. / x2jk
+    nz = x2jk != 0.
+    x2jk_safe = jnp.where(nz, x2jk, 1.0)
+    x2jkinv = 1. / x2jk_safe
     x2jkinv1p5 = x2jkinv * jnp.sqrt(x2jkinv)
-    Xjk = - xjk * x2jkinv1p5
-    dXjk = (- vjk + 3 * xvjk * xjk * x2jkinv) * x2jkinv1p5
+    Xjk = jnp.where(nz, - xjk * x2jkinv1p5, 0.0)
+    dXjk = jnp.where(nz, (- vjk + 3 * xvjk * xjk * x2jkinv) * x2jkinv1p5, 0.0)
 
     a = G * jnp.dot(Xjk, masses)
     adot = G * jnp.dot(dXjk, masses)

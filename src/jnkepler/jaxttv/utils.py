@@ -183,8 +183,12 @@ def get_energy(x, v, masses):
     """
     K = jnp.sum(0.5 * masses * jnp.sum(v*v, axis=1))
     X = x[:, None] - x[None, :]
+    d2 = jnp.sum(X*X, axis=2)
+    mask = jnp.tril(jnp.ones_like(d2, dtype=bool), k=-1)
+    d2_safe = jnp.where(mask, d2, 1.0)
+    inv_r = jnp.where(mask, 1.0 / jnp.sqrt(d2_safe), 0.0)
     M = masses[:, None] * masses[None, :]
-    U = -G * jnp.sum(M * jnp.tril(1./jnp.sqrt(jnp.sum(X*X, axis=2)), k=-1))
+    U = -G * jnp.sum(M * inv_r)
     return K + U
 
 
