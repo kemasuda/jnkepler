@@ -145,17 +145,26 @@ def _find_transit_newton_core(pidxarr, tcobsarr, t, xvjac, masses, nitr):
 
 
 def _find_tc_idx_sorted(t, tcobs):
-    """Find indices in ``t[1:]`` nearest to the target transit times.
+    """Find indices in ``t[1:]`` whose step-boundary times are nearest to
+    the target transit times.
+
+    The times returned by ``integrate_xv`` are at the midpoints of each
+    mapping step.  The fast transit finder corrects back by ``dt/2`` to
+    obtain step-boundary times before advancing to the observed transits.
+    This function searches on the corrected (boundary) times so that the
+    nearest step minimises the subsequent advance.
 
     Args:
-        t: Time array of shape ``(Nstep,)``.
+        t: Time array of shape ``(Nstep,)``.  Must be uniformly spaced
+            (as guaranteed by ``integrate_xv``).
         tcobs: Target transit time or times. A scalar or array-like input is
             accepted.
 
     Returns:
-        Indices in ``t[1:]`` nearest to ``tcobs``.
+        Indices in ``t[1:]`` nearest to ``tcobs`` in step-boundary time.
     """
-    return find_nearest_idx_sorted(t[1:], jnp.atleast_1d(tcobs))
+    dt = jnp.diff(t)[0]  # uniform spacing assumed
+    return find_nearest_idx_sorted(t[1:] - 0.5 * dt, jnp.atleast_1d(tcobs))
 
 
 def _advance_to_tcobs_fast(tcidx, pidxarr, tcobsarr, t, xvjac, masses):
