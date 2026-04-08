@@ -534,6 +534,64 @@ class JaxTTV(Nbody):
 
         return tc, tc2
 
+    def check_timestep(self, par_dict, dt_test, sigma_threshold=0.1):
+        """Check whether a coarser timestep gives an equivalent posterior.
+
+            Compares transit times at the current and candidate timesteps.
+            The candidate is considered safe when the maximum per-transit
+            timing difference is less than ``sigma_threshold`` times the
+            corresponding observation error.
+
+            Args:
+                par_dict: parameter dictionary (e.g. from optimization)
+                dt_test: candidate timestep to test
+                sigma_threshold: maximum acceptable timing bias in units of
+                    the observation error (default 0.1)
+
+            Returns:
+                dict with keys ``dt_current``, ``dt_test``,
+                ``tc_diff_max_sec``, ``tc_diff_rms_sec``,
+                ``max_sigma``, ``rms_sigma``, ``safe``
+
+        """
+        tc_current, _ = self.get_transit_times_obs(par_dict)
+
+        # deepcopy is needed because get_transit_times_obs is JIT-cached
+        # by object identity; mutating self.dt would not trigger retrace.
+        self2 = deepcopy(self)
+        self2.dt = dt_test
+        self2.times = jnp.arange(self2.t_start, self2.t_end, self2.dt)
+        tc_test, _ = self2.get_transit_times_obs(par_dict)
+
+        tc_diff = np.array(tc_current) - np.array(tc_test)
+        err = np.array(self.errorobs_flatten)
+
+        tc_diff_sec = np.abs(tc_diff) * 86400
+        sigma = np.abs(tc_diff) / err
+        max_sigma = sigma.max()
+        safe = max_sigma < sigma_threshold
+
+        result = dict(
+            dt_current=self.dt, dt_test=dt_test,
+            tc_diff_max_sec=tc_diff_sec.max(),
+            tc_diff_rms_sec=np.sqrt(np.mean(tc_diff_sec**2)),
+            max_sigma=max_sigma,
+            rms_sigma=np.sqrt(np.mean(sigma**2)),
+            safe=safe,
+        )
+
+        status = "OK" if safe else "UNSAFE"
+        print(f"# timestep check: dt={self.dt} -> dt={dt_test} "
+              f"({len(self.times)} -> {len(self2.times)} steps)")
+        print(f"# max tc difference: {tc_diff_sec.max():.2e} sec "
+              f"({max_sigma:.4f} sigma)")
+        print(f"# rms tc difference: {result['tc_diff_rms_sec']:.2e} sec "
+              f"({result['rms_sigma']:.4f} sigma)")
+        print(f"# min obs error: {err.min()*86400:.2f} sec")
+        print(f"# sigma_threshold={sigma_threshold}: {status}")
+
+        return result
+
     def sample_means_and_stds(self, samples, N=50, truncate=True, original_models=False):
         """compute mean and standard deviation of transit time models from HMC samples
 
