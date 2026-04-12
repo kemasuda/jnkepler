@@ -161,16 +161,8 @@ def observed_information(jttv, pdic, keys):
     assert set(keys).issubset({'ecosw', 'esinw', 'period', 'tic', 'lnode', 'cosi', 'lnpmass', 'pmass'}
                               ), "pdic keys must a subsect of {ecosw, esinw, period, tic, lnode, cosi}+{mass or lnmass}"
 
-    # jacfwd fails for newton-raphson method
-    from copy import deepcopy
-    if jttv.transit_time_method != "interpolation":
-        jttv_copy = deepcopy(jttv)
-        jttv_copy.transit_time_method = "interpolation"
-    else:
-        jttv_copy = jttv
-
     hessian_pytree = jacfwd(
-        jacrev(negative_log_likelihood, argnums=1), argnums=1)(jttv_copy, pdic)
+        jacrev(negative_log_likelihood, argnums=1), argnums=1)(jttv, pdic)
 
     return get_2d_matrix(hessian_pytree, keys)
 

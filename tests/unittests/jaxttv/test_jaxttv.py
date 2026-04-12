@@ -38,7 +38,8 @@ def test_get_transit_times_all():
 
 def test_check_timing_precision():
     jttv, _, _, pdic = read_testdata_tc()
-    tc, tc2 = jttv.check_timing_precision(pdic)
+    result = jttv.check_timing_precision(pdic)
+    tc, tc2 = result['tc'], result['tc_ref']
 
     assert np.isclose(np.max(np.abs(tc-tc2)), 6.10e-6)
 

@@ -307,12 +307,11 @@ def ttv_optim_least_squares(
             function.
         diff_mode: differentiation mode for the analytic Jacobian when
             jac=True. Must be one of:
-              - 'auto': use 'fwd' for transit_time_method='fast' and
-                'rev' for transit_time_method='newton'
-              - 'rev'
-              - 'fwd'
-            Note: for transit_time_method='newton', 'fwd' is overridden to
-            'rev' because forward-mode differentiation may fail there.
+              - 'auto' (default): use 'fwd' (forward mode), which is
+                faster for least-squares problems where the number of
+                residuals exceeds the number of parameters
+              - 'rev': reverse mode, preferred for scalar losses
+              - 'fwd': forward mode
         plot: if True, TTV models are plotted with data.
         save: path to save TTV plots.
         transit_orbit_idx: list of indices to specify which planets are
@@ -350,18 +349,10 @@ def ttv_optim_least_squares(
     transit_time_method = jttv.transit_time_method
 
     if diff_mode == "auto":
-        effective_diff_mode = (
-            "rev" if transit_time_method == "newton" else "fwd"
-        )
+        # jacfwd is preferred for least-squares Jacobians (n_resid > n_params)
+        effective_diff_mode = "fwd"
     else:
         effective_diff_mode = diff_mode
-
-    if jac and transit_time_method == "newton" and effective_diff_mode == "fwd":
-        warnings.warn(
-            "diff_mode='fwd' is not supported reliably with "
-            "transit_time_method='newton'; using diff_mode='rev' instead."
-        )
-        effective_diff_mode = "rev"
 
     # check non-transiting planets
     npl = len(param_bounds["period"][0])
