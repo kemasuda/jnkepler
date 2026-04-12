@@ -486,111 +486,106 @@ class JaxTTV(Nbody):
 
         return {'mean': np.mean(res), 'sd': np.std(res)}, params_st
 
-    def check_timing_precision(self, par_dict, dtfrac=1e-3, nitr_transit=10, nitr_kepler=10):
-        """Compare transit times against a smaller-step Newton calculation.
+    def check_timing_precision(self, par_dict, dtfrac=1e-3, nitr_transit=10, nitr_kepler=10,
+                               dt_test=None, sigma_threshold=None):
+        """Compare transit times against a reference calculation.
+
+            Two modes depending on whether ``dt_test`` is provided:
+
+            - ``dt_test=None`` (default): validates integration accuracy by
+              comparing the current timestep against a fine-step Newton
+              reference (``dtfrac * P_inner``).
+            - ``dt_test=<float>``: checks whether a candidate timestep gives
+              equivalent transit times to the current one, useful for finding
+              the largest safe timestep before MCMC.
 
             Note:
-                The baseline calculation uses the current
-                ``self.transit_time_method`` at the nominal timestep, while the
-                smaller-step reference always uses the Newton transit finder.
+                In the default mode, the baseline uses the current
+                ``self.transit_time_method`` at the nominal timestep, while
+                the reference always uses the Newton transit finder.
+                In ``dt_test`` mode, both calculations use the current
+                ``self.transit_time_method``.
 
-            Args:
-                params: JaxTTV parameter array
-                dtfrac: (innermost period) * dtfrac is used for the comparison integration
-                nitr_transit: number of Newton iterations for the smaller-step
-                    reference calculation
-                nitr_kepler: number of Kepler iterations for the smaller-step
-                    reference calculation
-
-            Returns:
-                tuple:
-                    - model transit times from the baseline calculation at the
-                      nominal timestep
-                    - model transit times from the smaller-step Newton
-                      calculation
-
-        """
-        tc, de = self.get_transit_times_obs(par_dict)
-        print("# fractional energy error (symplectic, dt=%.2e): %.2e" %
-              (self.dt, de))
-
-        dtcheck = self.p_init[0] * dtfrac
-        assert dtcheck < self.dt, "dtcheck is too large compared to original dt: choose smaller dtfrac."
-        self2 = deepcopy(self)
-        self2.dt = dtcheck
-        self2.times = jnp.arange(self2.t_start, self2.t_end, self2.dt)
-        self2.nitr_kepler = nitr_kepler
-        self2.nitr_transit = nitr_transit
-        self2.transit_time_method = "newton"
-        tc2, de2 = self2.get_transit_times_obs(par_dict)
-        intname = 'symplectic'
-        print("# fractional energy error (%s, dt=%.2e): %.2e" %
-              (intname, dtcheck, de2))
-
-        tc, tc2 = np.array(tc), np.array(tc2)
-        maxdiff = np.max(np.abs(tc-tc2))
-        print("# max difference in tc: %.2e days (%.2f sec)" %
-              (maxdiff, maxdiff*86400))
-
-        return tc, tc2
-
-    def check_timestep(self, par_dict, dt_test, sigma_threshold=0.1):
-        """Check whether a coarser timestep gives an equivalent posterior.
-
-            Compares transit times at the current and candidate timesteps.
-            The candidate is considered safe when the maximum per-transit
-            timing difference is less than ``sigma_threshold`` times the
-            corresponding observation error.
+                ``deepcopy`` is used internally to avoid a JIT cache staleness
+                issue where ``get_transit_times_obs`` does not retrace when
+                ``self.dt`` is mutated.
 
             Args:
                 par_dict: parameter dictionary (e.g. from optimization)
-                dt_test: candidate timestep to test
-                sigma_threshold: maximum acceptable timing bias in units of
-                    the observation error (default 0.1)
+                dtfrac: (innermost period) * dtfrac is used for the fine
+                    reference integration (default mode only)
+                nitr_transit: Newton iterations for the fine reference
+                    (default mode only)
+                nitr_kepler: Kepler iterations for the fine reference
+                    (default mode only)
+                dt_test: candidate timestep to compare against the current one;
+                    if provided, switches to timestep-check mode
+                sigma_threshold: if provided, print ``OK`` or ``UNSAFE``
+                    based on whether the maximum per-transit timing difference
+                    exceeds this value in units of the observation error
 
             Returns:
-                dict with keys ``dt_current``, ``dt_test``,
-                ``tc_diff_max_sec``, ``tc_diff_rms_sec``,
-                ``max_sigma``, ``rms_sigma``, ``safe``
+                dict with keys:
+                    - ``tc``: transit times at the current timestep
+                    - ``tc_ref``: transit times at the reference timestep
+                    - ``dt``: current timestep
+                    - ``dt_ref``: reference timestep used
+                    - ``max_diff_sec``: maximum absolute difference in seconds
+                    - ``rms_diff_sec``: rms difference in seconds
+                    - ``max_sigma``: maximum difference in units of obs error
+                    - ``rms_sigma``: rms difference in units of obs error
 
         """
-        tc_current, _ = self.get_transit_times_obs(par_dict)
-
-        # deepcopy is needed because get_transit_times_obs is JIT-cached
-        # by object identity; mutating self.dt would not trigger retrace.
-        self2 = deepcopy(self)
-        self2.dt = dt_test
-        self2.times = jnp.arange(self2.t_start, self2.t_end, self2.dt)
-        tc_test, _ = self2.get_transit_times_obs(par_dict)
-
-        tc_diff = np.array(tc_current) - np.array(tc_test)
         err = np.array(self.errorobs_flatten)
+        self2 = deepcopy(self)
 
-        tc_diff_sec = np.abs(tc_diff) * 86400
-        sigma = np.abs(tc_diff) / err
-        max_sigma = sigma.max()
-        safe = max_sigma < sigma_threshold
+        if dt_test is None:
+            # default mode: accuracy check against fine-step Newton reference
+            tc, de = self.get_transit_times_obs(par_dict)
+            print("# fractional energy error (symplectic, dt=%.2e): %.2e" %
+                  (self.dt, de))
 
-        result = dict(
-            dt_current=self.dt, dt_test=dt_test,
-            tc_diff_max_sec=tc_diff_sec.max(),
-            tc_diff_rms_sec=np.sqrt(np.mean(tc_diff_sec**2)),
-            max_sigma=max_sigma,
-            rms_sigma=np.sqrt(np.mean(sigma**2)),
-            safe=safe,
+            dt_ref = self.p_init[0] * dtfrac
+            assert dt_ref < self.dt, "reference dt is too large compared to original dt: choose smaller dtfrac."
+            self2.nitr_kepler = nitr_kepler
+            self2.nitr_transit = nitr_transit
+            self2.transit_time_method = "newton"
+        else:
+            # dt_test mode: check whether a candidate timestep is equivalent
+            tc, _ = self.get_transit_times_obs(par_dict)
+            dt_ref = dt_test
+
+        self2.dt = dt_ref
+        self2.times = jnp.arange(self2.t_start, self2.t_end, self2.dt)
+        tc_ref, de_ref = self2.get_transit_times_obs(par_dict)
+
+        if dt_test is None:
+            print("# fractional energy error (symplectic, dt=%.2e): %.2e" %
+                  (dt_ref, de_ref))
+        else:
+            print("# timestep check: dt=%s -> dt=%s (%d -> %d steps)" %
+                  (self.dt, dt_ref, len(self.times), len(self2.times)))
+            print("# min obs error: %.2f sec" % (err.min() * 86400))
+
+        tc, tc_ref = np.array(tc), np.array(tc_ref)
+        tc_diff_sec = np.abs(tc - tc_ref) * 86400
+        sigma = np.abs(tc - tc_ref) / err
+        max_diff_sec, rms_diff_sec = tc_diff_sec.max(), np.sqrt(np.mean(tc_diff_sec**2))
+        max_sigma, rms_sigma = sigma.max(), np.sqrt(np.mean(sigma**2))
+
+        print("# max tc difference: %.2e sec (%.4f sigma)" % (max_diff_sec, max_sigma))
+        print("# rms tc difference: %.2e sec (%.4f sigma)" % (rms_diff_sec, rms_sigma))
+
+        if sigma_threshold is not None:
+            status = "OK" if max_sigma < sigma_threshold else "UNSAFE"
+            print("# sigma_threshold=%s: %s" % (sigma_threshold, status))
+
+        return dict(
+            tc=tc, tc_ref=tc_ref,
+            dt=self.dt, dt_ref=dt_ref,
+            max_diff_sec=max_diff_sec, rms_diff_sec=rms_diff_sec,
+            max_sigma=max_sigma, rms_sigma=rms_sigma,
         )
-
-        status = "OK" if safe else "UNSAFE"
-        print(f"# timestep check: dt={self.dt} -> dt={dt_test} "
-              f"({len(self.times)} -> {len(self2.times)} steps)")
-        print(f"# max tc difference: {tc_diff_sec.max():.2e} sec "
-              f"({max_sigma:.4f} sigma)")
-        print(f"# rms tc difference: {result['tc_diff_rms_sec']:.2e} sec "
-              f"({result['rms_sigma']:.4f} sigma)")
-        print(f"# min obs error: {err.min()*86400:.2f} sec")
-        print(f"# sigma_threshold={sigma_threshold}: {status}")
-
-        return result
 
     def sample_means_and_stds(self, samples, N=50, truncate=True, original_models=False):
         """compute mean and standard deviation of transit time models from HMC samples
