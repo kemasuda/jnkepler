@@ -19,7 +19,7 @@ license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "jax<7.0", 
+    "jax<0.7", 
     "numpyro", 
     "pandas", 
     "numpy",
