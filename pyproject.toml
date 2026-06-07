@@ -29,6 +29,12 @@ dependencies = [
     "arviz"
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "jaxoplanet",
+]
+
 [project.urls]
 Homepage = "https://github.com/kemasuda/jnkepler"
 Repository = "https://github.com/kemasuda/jnkepler"
