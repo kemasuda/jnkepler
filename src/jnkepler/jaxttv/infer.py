@@ -18,7 +18,70 @@ from copy import deepcopy
 import time
 import warnings
 
-from .utils import params_to_dict, dict_to_params
+from .symplectic import integrate_xv
+from .utils import (
+    dict_to_params,
+    get_energy_diff_jac,
+    initialize_jacobi_xv,
+    params_to_dict,
+)
+
+
+def _canonicalize_transit_time_method(method):
+    """Return the canonical transit-time method name."""
+    if method is None:
+        return None
+    if method == "newton-raphson":
+        warnings.warn(
+            "'newton-raphson' is deprecated; use 'newton' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        method = "newton"
+    elif method == "interpolation":
+        warnings.warn(
+            "'interpolation' is deprecated; use 'kepler' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        method = "kepler"
+
+    if method not in ("fast", "newton", "kepler"):
+        raise ValueError(
+            "transit_time_method must be one of 'fast', 'newton', or 'kepler'."
+        )
+    return method
+
+
+def _get_transit_times_obs_with_method(
+    jttv,
+    par_dict,
+    transit_orbit_idx=None,
+    transit_time_method=None,
+):
+    """Compute observed transit times with an explicit transit-time method."""
+    if transit_time_method is None:
+        transit_time_method = jttv.transit_time_method
+
+    xjac0, vjac0, masses = initialize_jacobi_xv(par_dict, jttv.t_start)
+    times, xvjac = integrate_xv(
+        xjac0, vjac0, masses, jttv.times, nitr=jttv.nitr_kepler)
+
+    if transit_orbit_idx is None:
+        orbit_idx = jttv.pidx.astype(int) - 1
+    else:
+        orbit_idx = transit_orbit_idx[jttv.pidx.astype(int) - 1].astype(int)
+
+    transit_times = jttv._compute_transit_times(
+        orbit_idx,
+        jttv.tcobs_flatten,
+        times,
+        xvjac,
+        masses,
+        method=transit_time_method,
+    )
+    ediff = get_energy_diff_jac(xvjac, masses, -0.5 * jttv.dt)
+    return transit_times, ediff
 
 
 def ttv_default_parameter_bounds(jttv, npl=None, t0_guess=None, p_guess=None,
@@ -117,6 +180,7 @@ def _get_cached_residual_functions(
     npl,
     keys,
     transit_orbit_idx=None,
+    transit_time_method=None,
     jac=False,
     diff_mode="fwd",
 ):
@@ -133,6 +197,7 @@ def _get_cached_residual_functions(
         npl,
         tuple(keys),
         None if transit_orbit_idx is None else tuple(transit_orbit_idx),
+        transit_time_method,
         bool(jac),
         diff_mode,
     )
@@ -140,9 +205,11 @@ def _get_cached_residual_functions(
     if cache_key not in jttv._lsq_cache:
         def _model(p_flat):
             pdic = params_to_dict(p_flat, npl, keys)
-            return jttv.get_transit_times_obs(
+            return _get_transit_times_obs_with_method(
+                jttv,
                 pdic,
                 transit_orbit_idx=transit_orbit_idx,
+                transit_time_method=transit_time_method,
             )[0]
 
         def _resid(p_flat):
@@ -266,7 +333,7 @@ def ttv_optim_least_squares(
     loss="linear",
     loss_kwargs=None,
     jac=False,
-    diff_mode="auto",
+    diff_mode="fwd",
     plot=True,
     save=None,
     transit_orbit_idx=None,
@@ -275,6 +342,7 @@ def ttv_optim_least_squares(
     param_transform=None,
     return_optspace=False,
     gaussian_priors=None,
+    transit_time_method="newton",
 ):
     """Simple TTV fit using scipy.optimize.least_squares.
 
@@ -312,13 +380,11 @@ def ttv_optim_least_squares(
         jac: if True, use a JAX-based analytic Jacobian for the residual
             function.
         diff_mode: differentiation mode for the analytic Jacobian when
-            jac=True. Must be one of:
+            jac=True. Defaults to 'fwd' (``jax.jacfwd``). Must be one of:
+              - 'fwd': use ``jax.jacfwd``
+              - 'rev': use ``jax.jacrev``
               - 'auto': use 'fwd' for transit_time_method='fast' and
                 'rev' for transit_time_method='newton'
-              - 'rev'
-              - 'fwd'
-            Note: for transit_time_method='newton', 'fwd' is overridden to
-            'rev' because forward-mode differentiation may fail there.
         plot: if True, TTV models are plotted with data.
         save: path to save TTV plots.
         transit_orbit_idx: list of indices to specify which planets are
@@ -361,6 +427,10 @@ def ttv_optim_least_squares(
                     'period': {'index': 7, 'mean': 60.0, 'sigma': 1.0},
                     'lnpmass': {'index': 7, 'mean': np.log(3e-5), 'sigma': 0.5},
                 }
+        transit_time_method: algorithm used for transit-time computation during
+            least-squares optimization. Defaults to 'newton'. Supported values
+            are 'fast', 'newton', and 'kepler'. Set to None to use
+            ``jttv.transit_time_method``.
 
     Returns:
         dict or tuple:
@@ -384,8 +454,10 @@ def ttv_optim_least_squares(
             f"diff_mode must be 'auto', 'rev', or 'fwd', got {diff_mode!r}"
         )
 
-    # resolve differentiation mode
-    transit_time_method = jttv.transit_time_method
+    # resolve transit-time and differentiation modes
+    transit_time_method = _canonicalize_transit_time_method(transit_time_method)
+    if transit_time_method is None:
+        transit_time_method = jttv.transit_time_method
 
     if diff_mode == "auto":
         effective_diff_mode = (
@@ -393,13 +465,6 @@ def ttv_optim_least_squares(
         )
     else:
         effective_diff_mode = diff_mode
-
-    if jac and transit_time_method == "newton" and effective_diff_mode == "fwd":
-        warnings.warn(
-            "diff_mode='fwd' is not supported reliably with "
-            "transit_time_method='newton'; using diff_mode='rev' instead."
-        )
-        effective_diff_mode = "rev"
 
     # check non-transiting planets
     npl = len(param_bounds["period"][0])
@@ -544,6 +609,7 @@ def ttv_optim_least_squares(
         npl=npl,
         keys=keys,
         transit_orbit_idx=transit_orbit_idx,
+        transit_time_method=transit_time_method,
         jac=jac,
         diff_mode=effective_diff_mode,
     )
@@ -751,20 +817,21 @@ def ttv_optim_least_squares(
             np.median(np.asarray(jttv.errorobs_flatten, dtype=float)))
 
         tc_fast = np.asarray(
-            jttv.get_transit_times_obs(
+            _get_transit_times_obs_with_method(
+                jttv,
                 pdic_opt,
                 transit_orbit_idx=transit_orbit_idx,
+                transit_time_method="fast",
             )[0],
             dtype=float,
         )
 
-        jttv_newton = deepcopy(jttv)
-        jttv_newton.transit_time_method = "newton"
-
         tc_newton = np.asarray(
-            jttv_newton.get_transit_times_obs(
+            _get_transit_times_obs_with_method(
+                jttv,
                 pdic_opt,
                 transit_orbit_idx=transit_orbit_idx,
+                transit_time_method="newton",
             )[0],
             dtype=float,
         )
