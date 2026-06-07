@@ -34,6 +34,7 @@ class NbodyRV(Nbody):
                 array: stellar RVs at times_rvs (m/s), positive when the star is moving away
 
         """
+        self._validate_times_rv(times_rv)
         xjac0, vjac0, masses = initialize_jacobi_xv(
             par_dict, self.t_start)
         times, xvjac = integrate_xv(

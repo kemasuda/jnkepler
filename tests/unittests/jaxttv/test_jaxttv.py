@@ -1,10 +1,12 @@
 import numpy as np
 import jax.numpy as jnp
 import importlib_resources
+import pytest
 from importlib.util import find_spec
 import pickle
 from jnkepler.tests import read_testdata_tc, read_testdata_4planet
 from jnkepler.jaxttv.ttvfastutils import params_for_ttvfast, get_ttvfast_model_rv, get_ttvfast_model
+from jnkepler.jaxttv.rv import rv_from_xvjac
 from jnkepler.jaxttv.utils import em_to_dict, params_to_elements, elements_to_pdic, find_nearest_idx
 
 path = importlib_resources.files('jnkepler').joinpath('data')
@@ -118,6 +120,28 @@ def test_get_transit_times_and_rvs_obs():
 
     assert np.allclose(tc_jttv, tc_ttvfast, rtol=0, atol=1e-5)
     assert np.allclose(rv_jttv, rv_ttvfast, rtol=0, atol=5e-3)
+
+
+@pytest.mark.parametrize("side", ["below", "above"])
+def test_get_transit_times_and_rvs_obs_times_rv_outside_range_raises(side):
+    jttv, _, _, pdic = read_testdata_tc()
+    t_min, t_max = jttv._rv_interpolation_time_range()
+    time_rv = t_min - 1e-8 if side == "below" else t_max + 1e-8
+
+    with pytest.raises(ValueError, match="times_rv.*valid integration range"):
+        jttv.get_transit_times_and_rvs_obs(pdic, np.array([time_rv]))
+
+
+def test_rv_from_xvjac_out_of_range_times_return_nan():
+    times = jnp.array([0.0, 1.0, 2.0])
+    xvjac = jnp.zeros((3, 2, 1, 3))
+    xvjac = xvjac.at[:, 1, 0, 2].set(jnp.array([1.0, 2.0, 3.0]))
+    masses = jnp.array([1.0, 1e-3])
+
+    rv = rv_from_xvjac(jnp.array([-1.0, 0.5, 3.0]), times, xvjac, masses)
+
+    assert np.isnan(np.asarray(rv)[[0, 2]]).all()
+    assert np.isfinite(np.asarray(rv)[1])
 
 
 def get_ttvfast_times(jttv, pdic, nplanet, obs=True, **kwargs):

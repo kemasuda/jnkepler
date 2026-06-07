@@ -136,7 +136,6 @@ class NbodyTransit(JaxTTV):
 
         return nbodyflux, tc
 
-    @partial(jit, static_argnums=(0,))
     def get_flux_and_rv(self, par_dict, times_rv):
         """compute nbody flux and RV
 
@@ -155,6 +154,11 @@ class NbodyTransit(JaxTTV):
                     - stellar RVs at times_rvs (m/s), positive when the star is moving away
 
         """
+        self._validate_times_rv(times_rv)
+        return self._get_flux_and_rv(par_dict, times_rv)
+
+    @partial(jit, static_argnums=(0,))
+    def _get_flux_and_rv(self, par_dict, times_rv):
         _par_dict = initialize_transit_params(par_dict)
         tc, xsky_tc, vsky_tc, times, xvjac, masses = self.get_xvsky_tc(
             _par_dict)
