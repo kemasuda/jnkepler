@@ -24,4 +24,6 @@ def rv_from_xvjac(times_rv, times, xvjac, masses):
     xast, vast = jacobi_to_astrocentric(
         xvjac[:, 0, :, :], xvjac[:, 1, :, :], masses)
     xcm, vcm = a2cm_map(xast, vast, masses)
-    return - jnp.interp(times_rv, times, vcm[:, 0, 2]) * au_per_day
+    return - jnp.interp(
+        times_rv, times, vcm[:, 0, 2], left=jnp.nan, right=jnp.nan
+    ) * au_per_day

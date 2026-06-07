@@ -42,6 +42,31 @@ class Nbody:
         self.times = jnp.arange(t_start, t_end, dt)
         self.nitr_kepler = nitr_kepler
 
+    def _rv_interpolation_time_range(self):
+        """Return the time range used for RV interpolation."""
+        times = np.asarray(self.times)
+        if times.size == 0:
+            return float(self.t_start), float(self.t_end)
+        if times.size < 2:
+            return float(times[0]), float(times[-1])
+
+        dt = times[1] - times[0]
+        return float(times[1] + 0.5 * dt), float(times[-1] + 0.5 * dt)
+
+    def _validate_times_rv(self, times_rv):
+        times_rv = np.asarray(times_rv)
+        finite_mask = np.isfinite(times_rv)
+        if not np.any(finite_mask):
+            return
+
+        t_min, t_max = self._rv_interpolation_time_range()
+        finite_times = times_rv[finite_mask]
+        if np.any((finite_times < t_min) | (finite_times > t_max)):
+            raise ValueError(
+                "times_rv contains finite values outside the valid integration "
+                f"range [{t_min}, {t_max}]."
+            )
+
 
 class JaxTTV(Nbody):
     """main class for TTV analysis"""
@@ -268,7 +293,6 @@ class JaxTTV(Nbody):
         ediff = get_energy_diff_jac(xvjac, masses, -0.5*self.dt)
         return transit_times, ediff
 
-    @partial(jit, static_argnums=(0,))
     def get_transit_times_and_rvs_obs(self, par_dict, times_rv, transit_orbit_idx=None):
         """compute model transit times and stellar RVs
 
@@ -289,6 +313,12 @@ class JaxTTV(Nbody):
                     - float: fractional energy change
 
         """
+        self._validate_times_rv(times_rv)
+        return self._get_transit_times_and_rvs_obs(
+            par_dict, times_rv, transit_orbit_idx=transit_orbit_idx)
+
+    @partial(jit, static_argnums=(0,))
+    def _get_transit_times_and_rvs_obs(self, par_dict, times_rv, transit_orbit_idx=None):
         xjac0, vjac0, masses = initialize_jacobi_xv(
             par_dict, self.t_start)  # initial Jacobi position/velocity
         times, xvjac = integrate_xv(
