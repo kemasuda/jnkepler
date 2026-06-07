@@ -33,7 +33,7 @@ dependencies = [
 test = [
     "pytest",
     "jaxoplanet",
-    "setuptools",
+    "setuptools<82",
 ]
 
 [project.urls]
