@@ -19,6 +19,7 @@ from .symplectic import integrate_xv, kepler_step_map
 from .hermite4 import integrate_xv as integrate_xv_hermite4
 from .rv import *
 from ..infer import fit_t_distribution
+import jax
 from jax import jit, grad, config
 config.update('jax_enable_x64', True)
 
@@ -54,7 +55,13 @@ class Nbody:
         return float(times[1] + 0.5 * dt), float(times[-1] + 0.5 * dt)
 
     def _validate_times_rv(self, times_rv):
-        times_rv = np.asarray(times_rv)
+        try:
+            times_rv = np.asarray(times_rv)
+        except jax.errors.TracerArrayConversionError:
+            # times_rv is a JAX tracer, so its values are not known yet. This is
+            # a concrete-input guard only; skip it rather than fail when the
+            # caller is inside a traced function (e.g. a numpyro model).
+            return
         finite_mask = np.isfinite(times_rv)
         if not np.any(finite_mask):
             return
