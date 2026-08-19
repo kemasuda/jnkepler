@@ -1,4 +1,5 @@
 import numpy as np
+import jax
 import jax.numpy as jnp
 import importlib_resources
 import pytest
@@ -130,6 +131,26 @@ def test_get_transit_times_and_rvs_obs_times_rv_outside_range_raises(side):
 
     with pytest.raises(ValueError, match="times_rv.*valid integration range"):
         jttv.get_transit_times_and_rvs_obs(pdic, np.array([time_rv]))
+
+
+def test_get_transit_times_and_rvs_obs_traced_times_rv_skips_validation():
+    """times_rv is a JAX tracer whenever the caller sits inside a traced
+    function, as it does when a numpyro model is traced for inference. The range
+    check can only inspect concrete values, so it must be skipped in that case
+    rather than raising TracerArrayConversionError.
+    """
+    jttv, _, _, pdic = read_testdata_tc()
+    times_rv = np.linspace(jttv.t_start + 5, jttv.t_end - 5, 16)
+
+    def rvs(t):
+        _, rv, _ = jttv.get_transit_times_and_rvs_obs(pdic, t)
+        return rv
+
+    rv_traced = jax.jit(rvs)(jnp.asarray(times_rv))
+    rv_concrete = rvs(times_rv)
+
+    assert np.all(np.isfinite(rv_traced))
+    assert np.allclose(rv_traced, rv_concrete, rtol=0, atol=1e-8)
 
 
 def test_rv_from_xvjac_out_of_range_times_return_nan():
