@@ -18,24 +18,63 @@ See [readthedocs](https://jnkepler.readthedocs.io/en/stable/) for more details.
 
 ### *CPU performance note*
 
-If you use jnkepler on CPU with JAX ≥ 0.4.32, the default *thunk runtime* in the CPU backend can make computations much slower, especially when computing gradients. 
+`jnkepler` currently has a known CPU performance regression with the default
+XLA CPU runtime in recent JAX versions. See
+[issue #30](https://github.com/kemasuda/jnkepler/issues/30) for benchmarks
+and technical details.
 
-To avoid this, disable the thunk runtime by setting the following environment variable **before importing jax**:
+**For now, `jnkepler` still requires `jax<0.7`. This restriction is retained
+primarily because the older JAX configuration provides substantially better
+CPU performance, not because newer JAX versions are known to be fundamentally
+incompatible. Recent JAX versions (JAX 0.7–0.11.2) have worked in the workflows tested so far.**
+
+For maximum CPU performance, the currently recommended configuration is
+JAX 0.6.2 with the legacy CPU runtime. Set the following **before importing
+JAX**:
 
 ```bash
 export XLA_FLAGS="--xla_cpu_use_thunk_runtime=false"
 ```
 
-Or inside Python:
+Alternatively, this can be set directly in Python:
 
 ```python
 import os
 os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"
+
 import jax
 ```
 
-If this is not done, `jnkepler` will issue a warning on import.
-**Please note that this workaround is intended for JAX < 0.7**; this is why `jnkepler` currently requires `jax<0.7`.
+With the canonical JaxTTV benchmark, this configuration is about 4x faster
+than the default thunk runtime.
+
+**For recent JAX versions (JAX 0.7 or later)**, increasing the XLA CPU small-loop-hoisting threshold
+can recover most of the lost performance for many workloads:
+
+```bash
+export XLA_FLAGS="--xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=65536"
+```
+
+or in Python:
+
+```python
+import os
+os.environ["XLA_FLAGS"] = (
+    "--xla_backend_extra_options="
+    "xla_cpu_small_while_loop_byte_threshold=65536"
+)
+
+import jax
+```
+
+**This is an experimental workaround, not a general solution.** It may not
+be sufficient for more complex workloads; for example, in the tested
+8-planet case, other XLA optimizations prevented the relevant integration
+loop from being hoisted, so increasing the threshold alone did not improve
+performance.
+
+See [issue #30](https://github.com/kemasuda/jnkepler/issues/30) for the
+current status and benchmark results.
 
 ### *Note on the transit-finding algorithm (since v0.2.5)*
 
