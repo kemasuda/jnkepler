@@ -26,7 +26,9 @@ def _to_unconstrained(model, params_constrained, keys, *model_args, **model_kwar
         *unconstrained* space, suitable for use in inference algorithms
         (e.g., HMC/NUTS).
     """
-    tr = handlers.trace(handlers.seed(model, 0)).get_trace(
+    # Discover supports at the supplied parameters, avoiding invalid prior draws.
+    substituted = handlers.substitute(model, data=params_constrained)
+    tr = handlers.trace(handlers.seed(substituted, 0)).get_trace(
         *model_args, **model_kwargs)
     bij = {}
     for name, site in tr.items():
