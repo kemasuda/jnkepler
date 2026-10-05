@@ -26,9 +26,10 @@ and technical details.
 **For now, `jnkepler` still requires `jax<0.7`. This restriction is retained
 primarily because the older JAX configuration provides substantially better
 CPU performance, not because newer JAX versions are known to be fundamentally
-incompatible. Recent JAX versions (JAX 0.7–0.11.2) have worked in the workflows tested so far.**
+incompatible. JAX 0.7 or later has worked in the workflows tested so far,
+but remains outside the current dependency requirement.**
 
-For maximum CPU performance, the currently recommended configuration is
+For maximum tested CPU performance, the recommended configuration is
 JAX 0.6.2 with the legacy CPU runtime. Set the following **before importing
 JAX**:
 
@@ -48,8 +49,10 @@ import jax
 With the canonical JaxTTV benchmark, this configuration is about 4x faster
 than the default thunk runtime.
 
-**For recent JAX versions (JAX 0.7 or later)**, increasing the XLA CPU small-loop-hoisting threshold
-can recover most of the lost performance for many workloads:
+**If you need a newer JAX version (0.7 or later)**, this is outside the current
+`jax<0.7` dependency requirement. The following experimental workaround
+increases the XLA CPU small-loop-hoisting threshold and can recover much of
+the lost performance in many workloads. Set it **before importing JAX**:
 
 ```bash
 export XLA_FLAGS="--xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=65536"
