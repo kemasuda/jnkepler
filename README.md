@@ -18,30 +18,9 @@ See [readthedocs](https://jnkepler.readthedocs.io/en/stable/) for more details.
 
 ### *CPU performance note*
 
-jnkepler supports recent JAX releases (tested through 0.11.2).
-However, the CPU runtime enabled by default since JAX 0.4.32 can make
-jnkepler substantially slower with the default settings. For better CPU
-performance, use the configuration below for your JAX version.
+`jnkepler` is primarily intended for CPU execution, and supports recent JAX releases (tested through 0.11.2). For JAX >=0.4.32, the version-specific settings below substantially improve `jnkepler`'s performance compared with the default runtime settings.
 
-Set `XLA_FLAGS` **before importing JAX, jnkepler, NumPyro, or any other
-library that imports JAX**. In notebooks, restart the kernel first if
-these libraries have already been imported.
-
-**JAX <0.7: use the legacy CPU runtime**
-
-```bash
-export XLA_FLAGS="--xla_cpu_use_thunk_runtime=false"
-```
-
-Or in Python:
-
-```python
-import os
-os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"
-
-import jax
-import jnkepler
-```
+Set `XLA_FLAGS` **before importing JAX, jnkepler, NumPyro, or any other library that imports JAX**. In notebooks, restart the kernel first if these libraries have already been imported.
 
 **JAX >=0.7: increase the small-while-loop threshold**
 
@@ -62,16 +41,30 @@ import jax
 import jnkepler
 ```
 
-Choose only the configuration for your JAX version. If you already use
-`XLA_FLAGS`, preserve other required options, but remove the legacy
-runtime flag when moving to JAX >=0.7.
+**JAX 0.4.32–0.6.x: use the legacy CPU runtime**
 
-Performance varies with the JAX version, number of planets, and CPU.
-**JAX/jaxlib 0.6.2 with the legacy runtime remains our recommended
-baseline**, although it is not always the fastest configuration.
+```bash
+export XLA_FLAGS="--xla_cpu_use_thunk_runtime=false"
+```
 
-See the [CPU timing summary](notes/jax_cpu_runtime_summary.md)
-for benchmarks and tested configurations.
+Or in Python:
+
+```python
+import os
+os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"
+
+import jax
+import jnkepler
+```
+
+Use only the configuration for your JAX version. When upgrading to
+JAX >=0.7, replace `--xla_cpu_use_thunk_runtime=false` with the threshold setting above.
+
+Performance varies with the JAX version, planetary system, CPU, and
+workload. **JAX/jaxlib 0.6.2 with the legacy runtime** provides a well-tested and stable CPU performance reference. If execution is unexpectedly slow after applying the settings above, comparing against this configuration can help identify performance regressions. It can be faster for some workloads, but is not
+required or universally faster.
+
+See also [issue #30](https://github.com/kemasuda/jnkepler/issues/30) for benchmarks, version comparisons, and technical details.
 
 ### *Note on the transit-finding algorithm (since v0.2.5)*
 
