@@ -18,47 +18,38 @@ See [readthedocs](https://jnkepler.readthedocs.io/en/stable/) for more details.
 
 ### *CPU performance note*
 
-`jnkepler` currently has a known CPU performance regression with the default
-XLA CPU runtime in recent JAX versions. See
-[issue #30](https://github.com/kemasuda/jnkepler/issues/30) for benchmarks
-and technical details.
+jnkepler supports recent JAX releases (tested through 0.11.2).
+However, the CPU runtime enabled by default since JAX 0.4.32 can make
+jnkepler substantially slower with the default settings. For better CPU
+performance, use the configuration below for your JAX version.
 
-**For now, `jnkepler` still requires `jax<0.7`. This restriction is retained
-primarily because the older JAX configuration provides substantially better
-CPU performance, not because newer JAX versions are known to be fundamentally
-incompatible. JAX 0.7 or later has worked in the workflows tested so far,
-but remains outside the current dependency requirement.**
+Set `XLA_FLAGS` **before importing JAX, jnkepler, NumPyro, or any other
+library that imports JAX**. In notebooks, restart the kernel first if
+these libraries have already been imported.
 
-For maximum tested CPU performance, the recommended configuration is
-JAX 0.6.2 with the legacy CPU runtime. Set the following **before importing
-JAX**:
+**JAX <0.7: use the legacy CPU runtime**
 
 ```bash
 export XLA_FLAGS="--xla_cpu_use_thunk_runtime=false"
 ```
 
-Alternatively, this can be set directly in Python:
+Or in Python:
 
 ```python
 import os
 os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"
 
 import jax
+import jnkepler
 ```
 
-With the canonical JaxTTV benchmark, this configuration is about 4x faster
-than the default thunk runtime.
-
-**If you need a newer JAX version (0.7 or later)**, this is outside the current
-`jax<0.7` dependency requirement. The following experimental workaround
-increases the XLA CPU small-loop-hoisting threshold and can recover much of
-the lost performance in many workloads. Set it **before importing JAX**:
+**JAX >=0.7: increase the small-while-loop threshold**
 
 ```bash
 export XLA_FLAGS="--xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=65536"
 ```
 
-or in Python:
+Or in Python:
 
 ```python
 import os
@@ -68,16 +59,19 @@ os.environ["XLA_FLAGS"] = (
 )
 
 import jax
+import jnkepler
 ```
 
-**This is an experimental workaround, not a general solution.** It may not
-be sufficient for more complex workloads; for example, in the tested
-8-planet case, other XLA optimizations prevented the relevant integration
-loop from being hoisted, so increasing the threshold alone did not improve
-performance.
+Choose only the configuration for your JAX version. If you already use
+`XLA_FLAGS`, preserve other required options, but remove the legacy
+runtime flag when moving to JAX >=0.7.
 
-See [issue #30](https://github.com/kemasuda/jnkepler/issues/30) for the
-current status and benchmark results.
+Performance varies with the JAX version, number of planets, and CPU.
+**JAX/jaxlib 0.6.2 with the legacy runtime remains our recommended
+baseline**, although it is not always the fastest configuration.
+
+See the [CPU timing summary](notes/jax_cpu_runtime_summary.md)
+for benchmarks and tested configurations.
 
 ### *Note on the transit-finding algorithm (since v0.2.5)*
 
@@ -121,4 +115,3 @@ If you use `jnkepler` in your research, please consider citing the references be
 
 - Masuda et al. (2024), [A Fourth Planet in the Kepler-51 System Revealed by Transit Timing Variations](https://ui.adsabs.harvard.edu/abs/2024AJ....168..294M/abstract), AJ 168, 294
 - Masuda (2025), [jnkepler: Differentiable N-body model for multi-planet systems](https://ui.adsabs.harvard.edu/abs/2025ascl.soft05006M/abstract),  Astrophysics Source Code Library, ascl:2505.006.
-
