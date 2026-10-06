@@ -61,7 +61,12 @@ def test_cpu_advice(version_info, flags, setting):
     if setting is None:
         assert message is None
     else:
-        assert f'XLA_FLAGS="{setting}"' in message
+        assert f'\nIn a shell:\n    export XLA_FLAGS="{setting}"\n\n' in message
+        assert (
+            '\nOr in Python:\n    import os\n'
+            f'    os.environ["XLA_FLAGS"] = "{setting}"\n'
+            '    import jax\n    import jnkepler\n\n'
+        ) in message
         assert "CPU performance" in message
         assert "before importing JAX or jnkepler" in message
         assert "README" in message
