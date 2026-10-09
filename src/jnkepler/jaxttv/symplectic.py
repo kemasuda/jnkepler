@@ -337,7 +337,7 @@ def integrate_xv(x, v, masses, times, nitr=10):
         xout, vout = kepler_step(x, v, ki, dt, nitr=nitr)
         return [xout, vout], jnp.array([xout, vout])
 
-    step = checkpoint(step)
+    step = checkpoint(step, prevent_cse=False)
     _, xv = scan(step, [x, v], dtarr)
     return times[1:] + 0.5 * dtarr[0], xv
 
