@@ -16,12 +16,19 @@ from . import keplerian
 
 import os
 import warnings
-import jax
 
-from ._cpu_performance import _cpu_performance_message
-
-_cpu_advice = _cpu_performance_message(
-    getattr(jax, "__version_info__", None), os.environ.get("XLA_FLAGS", ""),
-)
-if _cpu_advice:
-    warnings.warn(_cpu_advice, UserWarning)
+if "--xla_cpu_use_thunk_runtime=false" not in os.environ.get("XLA_FLAGS", ""):
+    warnings.warn(
+        'For best CPU performance on JAX >= 0.4.32, please disable the thunk runtime.\n'
+        '\n'
+        'You can do this by setting the environment variable BEFORE importing jax:\n'
+        '    export XLA_FLAGS="--xla_cpu_use_thunk_runtime=false"\n'
+        '\n'
+        'Or inside Python, add these lines before importing jax:\n'
+        '    import os\n'
+        '    os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"\n'
+        '    import jax\n'
+        '\n'
+        'Without this, CPU execution may be significantly slower, especially when computing gradients.',
+        UserWarning,
+    )

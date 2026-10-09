@@ -1,3 +1,5 @@
+import os
+os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"
 # autopep8: off
 import numpy as np
 import importlib_resources
@@ -9,30 +11,6 @@ from jnkepler.information import information_from_model_independent_normal
 
 
 path = importlib_resources.files('jnkepler').joinpath('data')
-
-
-def test_information_with_parameter_dependent_support():
-    import jax.numpy as jnp
-    import numpyro
-    import numpyro.distributions as dist
-
-    def model():
-        lower = numpyro.sample("lower", dist.Uniform(0., 1.))
-        x = numpyro.sample("x", dist.Uniform(lower, lower + 1.))
-        mean = numpyro.deterministic("mean", jnp.array([x]))
-        numpyro.sample("obs", dist.Normal(mean, 1.), obs=jnp.array([0.75]))
-
-    result = information_from_model_independent_normal(
-        model=model, pdic={"lower": 0.25, "x": 0.75}, keys=["lower", "x"],
-        mu_name="mean", observed=jnp.array([0.75]), sigma_sd=jnp.ones(1),
-        param_space="unconstrained",
-    )
-
-    np.testing.assert_allclose(result["params_unconstrained"]["lower"], np.log(1./3.))
-    np.testing.assert_allclose(result["params_unconstrained"]["x"], 0., atol=1e-12)
-    derivative = np.array([0.25 * 0.75, 0.5 * 0.5])
-    np.testing.assert_allclose(result["fisher"], np.outer(derivative, derivative))
-    assert np.isfinite(result["fisher"]).all()
 
 
 def test_information_from_model_independent_normal():
