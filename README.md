@@ -18,24 +18,53 @@ See [readthedocs](https://jnkepler.readthedocs.io/en/stable/) for more details.
 
 ### *CPU performance note*
 
-If you use jnkepler on CPU with JAX ≥ 0.4.32, the default *thunk runtime* in the CPU backend can make computations much slower, especially when computing gradients. 
+`jnkepler` is primarily intended for CPU execution, and supports recent JAX releases (tested through 0.11.2). For JAX >=0.4.32, the version-specific settings below substantially improve `jnkepler`'s performance compared with the default runtime settings.
 
-To avoid this, disable the thunk runtime by setting the following environment variable **before importing jax**:
+Set `XLA_FLAGS` **before importing JAX, jnkepler, NumPyro, or any other library that imports JAX**. In notebooks, restart the kernel first if these libraries have already been imported.
+
+**JAX >=0.7: increase the small-while-loop threshold**
+
+```bash
+export XLA_FLAGS="--xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=65536"
+```
+
+Or in Python:
+
+```python
+import os
+os.environ["XLA_FLAGS"] = (
+    "--xla_backend_extra_options="
+    "xla_cpu_small_while_loop_byte_threshold=65536"
+)
+
+import jax
+import jnkepler
+```
+
+**JAX 0.4.32–0.6.x: use the legacy CPU runtime**
 
 ```bash
 export XLA_FLAGS="--xla_cpu_use_thunk_runtime=false"
 ```
 
-Or inside Python:
+Or in Python:
 
 ```python
 import os
 os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"
+
 import jax
+import jnkepler
 ```
 
-If this is not done, `jnkepler` will issue a warning on import.
-**Please note that this workaround is intended for JAX < 0.7**; this is why `jnkepler` currently requires `jax<0.7`.
+Use only the configuration for your JAX version. When upgrading to
+JAX >=0.7, replace `--xla_cpu_use_thunk_runtime=false` with the threshold setting above.
+
+Performance varies with the JAX version, planetary system, CPU, and
+workload. **JAX/jaxlib 0.6.2 with the legacy runtime** provides a well-tested and stable CPU performance reference. If execution is unexpectedly slow after applying the settings above, comparing against this configuration can help identify performance regressions. It can be faster for some workloads, but is not
+required or universally faster.
+
+See also [issue #30](https://github.com/kemasuda/jnkepler/issues/30) for benchmarks, version comparisons, and technical details.
 
 ### *Note on the transit-finding algorithm (since v0.2.5)*
 
@@ -70,10 +99,12 @@ Explore example notebooks in the `examples/` directory to see `jnkepler` in acti
 - K2-19: TTVs confirm 3:2 resonance [[paper]](https://arxiv.org/abs/2509.18031)
 - TOI-4495: Photodynamical modeling of a pair of near-resonant sub-Neptunes [[paper]](https://arxiv.org/abs/2601.02665) [[repository]](https://github.com/kemasuda/toi4495-ttv)
 - V1298 Tau: Four low-density planets transiting a young star [[paper]](https://www.nature.com/articles/s41586-025-09840-z) [[repository]](https://github.com/kemasuda/v1298tau-ttv); see also `examples/v1298tau_ttv_student.ipynb` in this repo
-- TOI-2076: [[paper]](https://ui.adsabs.harvard.edu/abs/2026arXiv260302550W/abstract) 
+- TOI-2076: TTV modeling of a young, near-resonant planetary system [[paper]](https://ui.adsabs.harvard.edu/abs/2026arXiv260302550W/abstract)
+- TOI-791: TTV masses of two extremely low-density, Jupiter-sized planets [[paper]](https://arxiv.org/abs/2606.30016)
 
 ## References
 
+If you use `jnkepler` in your research, please consider citing the references below.
+
 - Masuda et al. (2024), [A Fourth Planet in the Kepler-51 System Revealed by Transit Timing Variations](https://ui.adsabs.harvard.edu/abs/2024AJ....168..294M/abstract), AJ 168, 294
 - Masuda (2025), [jnkepler: Differentiable N-body model for multi-planet systems](https://ui.adsabs.harvard.edu/abs/2025ascl.soft05006M/abstract),  Astrophysics Source Code Library, ascl:2505.006.
-
