@@ -1,5 +1,3 @@
-import os
-os.environ["XLA_FLAGS"] = "--xla_cpu_use_thunk_runtime=false"
 # autopep8: off
 import numpy as np
 import importlib_resources

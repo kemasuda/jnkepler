@@ -1,0 +1,10 @@
+# Reproducible CPU test environment; these are not package dependency bounds.
+jax==0.11.2
+jaxlib==0.11.2
+numpyro==0.22.0
+numpy==2.5.3
+scipy==1.16.2
+jaxoplanet==0.1.0
+equinox==0.13.1
+pytest==8.4.2
+setuptools==80.9.0
