@@ -11,18 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - python-version: "3.12"
-            constraints: cpu-legacy.txt
-            xla-flags: --xla_cpu_use_thunk_runtime=false
-          - python-version: "3.12"
-            constraints: cpu-modern.txt
-            xla-flags: --xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=65536
-
-    env:
-      JAX_PLATFORMS: cpu
-      JAX_ENABLE_X64: "true"
-      XLA_FLAGS: ${{ matrix.xla-flags }}
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -34,9 +23,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install -U pip
-          python -m pip install -c ".github/constraints/${{ matrix.constraints }}" -e ".[test]"
-          python -m pip check
-          python -c "import jax, jaxlib, numpyro; print('jax', jax.__version__, 'jaxlib', jaxlib.__version__, 'numpyro', numpyro.__version__)"
+          python -m pip install -e ".[test]"
 
       - name: Run tests
         run: python -m pytest tests -q

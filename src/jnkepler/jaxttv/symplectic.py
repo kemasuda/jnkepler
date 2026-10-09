@@ -213,24 +213,6 @@ def mmat_from_masses(masses):
     )
 
 
-def _jacobi_prefix(xjac, mass_fraction):
-    """Apply the Jacobi mass matrix using a weighted exclusive prefix sum."""
-    weighted = mass_fraction[:, None] * xjac
-    prefix = jnp.concatenate(
-        (jnp.zeros_like(xjac[:1]), jnp.cumsum(weighted, axis=0)[:-1]), axis=0
-    )
-    return xjac + prefix
-
-
-def _jacobi_suffix(g_ast, mass_fraction):
-    """Apply the transposed mass matrix using an exclusive suffix sum."""
-    suffix = jnp.concatenate(
-        (jnp.cumsum(g_ast[::-1], axis=0)[::-1][1:], jnp.zeros_like(g_ast[:1])),
-        axis=0,
-    )
-    return g_ast + mass_fraction[:, None] * suffix
-
-
 def Hintgrad(xjac, vjac, masses):
     """gradient of the interaction Hamiltonian times (star mass / planet mass)
 
@@ -245,7 +227,7 @@ def Hintgrad(xjac, vjac, masses):
     m0 = masses[0]
     mp = masses[1:]  # (N,)
     mu = mp / m0  # (N,)
-    mass_fraction = mp / jnp.cumsum(masses)[1:]
+    M = mmat_from_masses(masses)  # (N,N)
 
     # ---- term 1: + sum_i mu_i / |xjac_i| (Jacobi) ----
     r2 = jnp.sum(xjac * xjac, axis=1)
@@ -254,7 +236,7 @@ def Hintgrad(xjac, vjac, masses):
     g_jac = -(mu[:, None] * xjac) * inv_r3[:, None]  # d/dxjac of +sum mu/|x|
 
     # ---- astrocentric ----
-    xast = _jacobi_prefix(xjac, mass_fraction)
+    xast = M @ xjac
 
     # term 2: - sum_i mu_i / |xast_i|
     r2a = jnp.sum(xast * xast, axis=1)
@@ -278,7 +260,7 @@ def Hintgrad(xjac, vjac, masses):
     g_ast = g_ast_sp + g_ast_pp  # total dHint/dxast
 
     # chain rule back to Jacobi: xast = M @ xjac => dH/dxjac += M^T @ dH/dxast
-    g_from_ast = _jacobi_suffix(g_ast, mass_fraction)
+    g_from_ast = M.T @ g_ast
 
     g = g_jac + g_from_ast
     return g * (m0 / mp)[:, None]
@@ -337,7 +319,7 @@ def integrate_xv(x, v, masses, times, nitr=10):
         xout, vout = kepler_step(x, v, ki, dt, nitr=nitr)
         return [xout, vout], jnp.array([xout, vout])
 
-    step = checkpoint(step, prevent_cse=False)
+    step = checkpoint(step)
     _, xv = scan(step, [x, v], dtarr)
     return times[1:] + 0.5 * dtarr[0], xv
 
