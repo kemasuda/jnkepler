@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use jnkepler in your research, please cite the references listed in the README."
+
+title: "jnkepler: Differentiable N-body model for multi-planet systems"
+type: software
+
+authors:
+  - family-names: "Masuda"
+    given-names: "Kento"
+
+repository-code: "https://github.com/kemasuda/jnkepler"
+url: "https://ascl.net/2505.006"
+license: MIT
+
+identifiers:
+  - type: other
+    value: "ascl:2505.006"
+    description: "Astrophysics Source Code Library identifier"
