@@ -7,12 +7,15 @@ __all__ = ["integrate_xv", "kepler_step_map",
 
 import jax.numpy as jnp
 from functools import partial
-from jax import jit, vmap, grad, config, checkpoint, custom_jvp
+from jax import jit, vmap, grad, config, checkpoint, checkpoint_policies, custom_jvp
+from jax.ad_checkpoint import checkpoint_name
 from jax.lax import scan, while_loop
 
 from .conversion import G
 
 config.update("jax_enable_x64", True)
+
+_KEPLER_SOLUTION_NAME = "jnkepler_converged_dE"
 
 
 def _compute_ki(masses):
@@ -122,6 +125,8 @@ def solve_dE_jvp(max_iter, tol, primals, tangents):
     ecosE0_dot, esinE0_dot, dM_dot = tangents
 
     dE = solve_dE(ecosE0, esinE0, dM, max_iter=max_iter, tol=tol)
+    # Reuse the converged solution when the integration step is rematerialized.
+    dE = checkpoint_name(dE, _KEPLER_SOLUTION_NAME)
 
     # implicit differentiation:
     # F(dE; ecosE0, esinE0, dM)
@@ -337,7 +342,8 @@ def integrate_xv(x, v, masses, times, nitr=10):
         xout, vout = kepler_step(x, v, ki, dt, nitr=nitr)
         return [xout, vout], jnp.array([xout, vout])
 
-    step = checkpoint(step, prevent_cse=False)
+    step = checkpoint(step, prevent_cse=False,
+                      policy=checkpoint_policies.save_only_these_names(_KEPLER_SOLUTION_NAME))
     _, xv = scan(step, [x, v], dtarr)
     return times[1:] + 0.5 * dtarr[0], xv
 

@@ -1,0 +1,20 @@
+{
+  "source_solution_row_zero_based": 18,
+  "planets": 8,
+  "observed_planets": 7,
+  "selection": "first observed transit per observed planet; original integration start and timestep; end two days after last selected observation",
+  "original_sources": {
+    "benchmarks/jaxttv/data/T1_timings_20191203_JWST_v10_edited.txt": "ae061eec8da1ed865c439e142b659cb6d338dc5b71b340ebd72cd1defe89ad26",
+    "benchmarks/jaxttv/data/reoptimized_elements.csv": "1d00de91d6d001423bb6048c8d0dea860198e93859206e4e1d972f680df62b6f"
+  },
+  "observed_transits": 7,
+  "full_benchmark_transits": 644,
+  "steps": 20331,
+  "parameter_order": [
+    "period",
+    "ecosw",
+    "esinw",
+    "tic",
+    "lnpmass"
+  ]
+}
