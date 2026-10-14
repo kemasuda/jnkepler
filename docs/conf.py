@@ -1,10 +1,10 @@
 # docs/conf.py
-import os
+from importlib.metadata import PackageNotFoundError, version as package_version
+from pathlib import Path
 import sys
 
 # src-layout
-sys.path.insert(0, os.path.abspath("../src"))
-sys.path.insert(0, os.path.abspath(os.path.expanduser('~/jnkepler')))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 project = "jnkepler"
 author = "Kento Masuda"
@@ -16,17 +16,17 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
+    "sphinx.ext.mathjax",
 ]
 
-# version from setuptools_scm
+# The build installs the package, whose version comes from setuptools_scm.
 try:
-    from jnkepler.jnkepler_version import __version__
-    release = __version__
-except Exception:
+    release = package_version("jnkepler")
+except PackageNotFoundError:
     release = "unknown"
 
-templates_path = ["_templates"]
+myst_enable_extensions = ["dollarmath"]
+myst_heading_anchors = 3
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "sphinx_rtd_theme"
-html_css_files = ["header.css"]
