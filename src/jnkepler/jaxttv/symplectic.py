@@ -428,7 +428,7 @@ def compute_corrector_coefficientsTO():
 
 
 def corrector_step(x, v, ki, masses, a, b):
-    """corrector step
+    """TTVFast C(a,b): Kepler(-a), kick(b), Kepler(a), in execution order.
 
     Args:
         x: positions (Norbit, xyz)
@@ -446,8 +446,19 @@ def corrector_step(x, v, ki, masses, a, b):
     return _x, _v
 
 
+def _corrector_z(x, v, ki, masses, a, b):
+    """TTVFast Z(a,b): C(-a,-b) followed by C(a,b)."""
+    x, v = corrector_step(x, v, ki, masses, -a, -b)
+    return corrector_step(x, v, ki, masses, a, b)
+
+
 def real_to_mapTO(x, v, ki, masses, dt):
-    """transformation between real and mapping coordinates
+    """Forward third-order corrector from real to mapping coordinates.
+
+    Matches TTVFast's c_version/ttv-map-jacobi.c: execute Z(a2*dt,b2*dt),
+    then Z(a1*dt,b1*dt). Each Z contains two C operations; the signs and
+    ordering are significant. This transform does not include the half drift
+    used to initialize the integration map.
 
     Args:
         x: positions (Norbit, xyz)
@@ -460,6 +471,6 @@ def real_to_mapTO(x, v, ki, masses, dt):
         mapped positions and velocities
     """
     TOa1, TOa2, TOb1, TOb2 = compute_corrector_coefficientsTO()
-    _x, _v = corrector_step(x, v, ki, masses, TOa2 * dt, TOb2 * dt)
-    _x, _v = corrector_step(_x, _v, ki, masses, TOa1 * dt, TOb1 * dt)
+    _x, _v = _corrector_z(x, v, ki, masses, TOa2 * dt, TOb2 * dt)
+    _x, _v = _corrector_z(_x, _v, ki, masses, TOa1 * dt, TOb1 * dt)
     return _x, _v
