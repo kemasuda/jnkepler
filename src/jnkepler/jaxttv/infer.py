@@ -357,22 +357,22 @@ def ttv_optim_least_squares(
             starts randomize only `lnpmass`.
         loss: loss specification for scipy.optimize.least_squares.
             This can be:
-              - a built-in SciPy loss string such as 'linear', 'soft_l1',
-                'huber', 'cauchy', 'arctan'
-              - 'student_t' to use Student-t negative log likelihood
-              - a custom callable compatible with scipy.optimize.least_squares
+
+            - a built-in SciPy loss string such as 'linear', 'soft_l1',
+              'huber', 'cauchy', 'arctan'
+            - 'student_t' to use Student-t negative log likelihood
+            - a custom callable compatible with scipy.optimize.least_squares
 
             Gaussian priors are currently not supported with loss='student_t'.
             With other non-linear losses, the Gaussian-prior residuals are
             passed to scipy.optimize.least_squares in the same residual vector
             as the data residuals.
         loss_kwargs: optional dict for loss-specific options. Default is None.
-            For loss='student_t':
-                {'nu': ..., 'scale': ...}
-                Default is {'nu': 4.0, 'scale': 1.0}.
+            For loss='student_t', use ``{'nu': ..., 'scale': ...}``.
+            Default is ``{'nu': 4.0, 'scale': 1.0}``.
 
-            For built-in or custom non-linear losses:
-                {'f_scale': ...} can be passed through to least_squares.
+            For built-in or custom non-linear losses, ``{'f_scale': ...}``
+            can be passed through to least_squares.
 
             For loss='student_t', the custom loss returns 2*NLL per data
             point, so least_squares.cost corresponds to the total NLL.
@@ -381,10 +381,11 @@ def ttv_optim_least_squares(
             function.
         diff_mode: differentiation mode for the analytic Jacobian when
             jac=True. Defaults to 'fwd' (``jax.jacfwd``). Must be one of:
-              - 'fwd': use ``jax.jacfwd``
-              - 'rev': use ``jax.jacrev``
-              - 'auto': use 'fwd' for transit_time_method='fast' and
-                'rev' for transit_time_method='newton'
+
+            - 'fwd': use ``jax.jacfwd``
+            - 'rev': use ``jax.jacrev``
+            - 'auto': use 'fwd' for transit_time_method='fast' and
+              'rev' for transit_time_method='newton'
         plot: if True, TTV models are plotted with data.
         save: path to save TTV plots.
         transit_orbit_idx: list of indices to specify which planets are
@@ -421,7 +422,7 @@ def ttv_optim_least_squares(
 
                 (p_opt - mean) / sigma.
 
-            Example:
+            For example::
 
                 gaussian_priors={
                     'period': {'index': 7, 'mean': 60.0, 'sigma': 1.0},
