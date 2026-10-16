@@ -57,12 +57,9 @@ import jax
 import jnkepler
 ```
 
-Use only the configuration for your JAX version. When upgrading to
-JAX >=0.7, replace `--xla_cpu_use_thunk_runtime=false` with the threshold setting above.
+Use only the configuration for your JAX version. When upgrading to JAX >=0.7, replace `--xla_cpu_use_thunk_runtime=false` with the threshold setting above.
 
-Performance varies with the JAX version, planetary system, CPU, and
-workload. **JAX/jaxlib 0.6.2 with the legacy runtime** provides a well-tested and stable CPU performance reference. If execution is unexpectedly slow after applying the settings above, comparing against this configuration can help identify performance regressions. It can be faster for some workloads, but is not
-required or universally faster.
+Performance varies with the JAX version, planetary system, CPU, and workload. **JAX/jaxlib 0.6.2 with the legacy runtime** provides a well-tested and stable CPU performance reference. If execution is unexpectedly slow after applying the settings above, comparing against this configuration can help identify performance regressions. It can be faster for some workloads, but is not required or universally faster.
 
 See also [issue #30](https://github.com/kemasuda/jnkepler/issues/30) for benchmarks, version comparisons, and technical details.
 
@@ -74,7 +71,10 @@ For this reason, when using the `fast` method in NUTS, **initialize the sampler 
 
 ## Examples
 
-Explore example notebooks in the `examples/` directory to see `jnkepler` in action:
+Start with the step-by-step tutorials: [fit transit times](docs/quickstart.md), [write a NumPyro model](docs/numpyro_model.md), and [initialize, tune, and diagnose NUTS](docs/nuts.md).
+For non-transiting planets, RVs, photodynamics, and pure Keplerian calculations, see [Models and extensions](docs/models.md).
+
+The `examples/` directory contains the notebooks listed below. See the [example notebook guide](docs/examples.md) for their scope and requirements.
 
 - **minimal example**: `examples/minimal_example.ipynb`
   - computing transit times and RVs

@@ -43,7 +43,8 @@ def test_check_timing_precision():
     jttv, _, _, pdic = read_testdata_tc()
     tc, tc2 = jttv.check_timing_precision(pdic)
 
-    assert np.isclose(np.max(np.abs(tc-tc2)), 6.10e-6)
+    # Two-Z forward corrector: nominal versus small-step Newton reference.
+    assert np.isclose(np.max(np.abs(tc-tc2)), 1.9275e-7)
 
 
 def test_get_transit_times_obs_nontransiting():

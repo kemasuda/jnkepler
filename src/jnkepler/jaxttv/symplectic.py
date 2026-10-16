@@ -7,12 +7,15 @@ __all__ = ["integrate_xv", "kepler_step_map",
 
 import jax.numpy as jnp
 from functools import partial
-from jax import jit, vmap, grad, config, checkpoint, custom_jvp
+from jax import jit, vmap, grad, config, checkpoint, checkpoint_policies, custom_jvp
+from jax.ad_checkpoint import checkpoint_name
 from jax.lax import scan, while_loop
 
 from .conversion import G
 
 config.update("jax_enable_x64", True)
+
+_KEPLER_SOLUTION_NAME = "jnkepler_converged_dE"
 
 
 def _compute_ki(masses):
@@ -122,6 +125,8 @@ def solve_dE_jvp(max_iter, tol, primals, tangents):
     ecosE0_dot, esinE0_dot, dM_dot = tangents
 
     dE = solve_dE(ecosE0, esinE0, dM, max_iter=max_iter, tol=tol)
+    # Reuse the converged solution when the integration step is rematerialized.
+    dE = checkpoint_name(dE, _KEPLER_SOLUTION_NAME)
 
     # implicit differentiation:
     # F(dE; ecosE0, esinE0, dM)
@@ -337,7 +342,8 @@ def integrate_xv(x, v, masses, times, nitr=10):
         xout, vout = kepler_step(x, v, ki, dt, nitr=nitr)
         return [xout, vout], jnp.array([xout, vout])
 
-    step = checkpoint(step, prevent_cse=False)
+    step = checkpoint(step, prevent_cse=False,
+                      policy=checkpoint_policies.save_only_these_names(_KEPLER_SOLUTION_NAME))
     _, xv = scan(step, [x, v], dtarr)
     return times[1:] + 0.5 * dtarr[0], xv
 
@@ -422,7 +428,7 @@ def compute_corrector_coefficientsTO():
 
 
 def corrector_step(x, v, ki, masses, a, b):
-    """corrector step
+    """TTVFast C(a,b): Kepler(-a), kick(b), Kepler(a), in execution order.
 
     Args:
         x: positions (Norbit, xyz)
@@ -440,8 +446,19 @@ def corrector_step(x, v, ki, masses, a, b):
     return _x, _v
 
 
+def _corrector_z(x, v, ki, masses, a, b):
+    """TTVFast Z(a,b): C(-a,-b) followed by C(a,b)."""
+    x, v = corrector_step(x, v, ki, masses, -a, -b)
+    return corrector_step(x, v, ki, masses, a, b)
+
+
 def real_to_mapTO(x, v, ki, masses, dt):
-    """transformation between real and mapping coordinates
+    """Forward third-order corrector from real to mapping coordinates.
+
+    Matches TTVFast's c_version/ttv-map-jacobi.c: execute Z(a2*dt,b2*dt),
+    then Z(a1*dt,b1*dt). Each Z contains two C operations; the signs and
+    ordering are significant. This transform does not include the half drift
+    used to initialize the integration map.
 
     Args:
         x: positions (Norbit, xyz)
@@ -454,6 +471,6 @@ def real_to_mapTO(x, v, ki, masses, dt):
         mapped positions and velocities
     """
     TOa1, TOa2, TOb1, TOb2 = compute_corrector_coefficientsTO()
-    _x, _v = corrector_step(x, v, ki, masses, TOa2 * dt, TOb2 * dt)
-    _x, _v = corrector_step(_x, _v, ki, masses, TOa1 * dt, TOb1 * dt)
+    _x, _v = _corrector_z(x, v, ki, masses, TOa2 * dt, TOb2 * dt)
+    _x, _v = _corrector_z(_x, _v, ki, masses, TOa1 * dt, TOb1 * dt)
     return _x, _v
