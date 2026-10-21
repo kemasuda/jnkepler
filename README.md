@@ -118,6 +118,7 @@ The `examples/` directory contains the notebooks listed below. See the [example 
 - V1298 Tau: Four low-density planets transiting a young star [[paper]](https://www.nature.com/articles/s41586-025-09840-z) [[repository]](https://github.com/kemasuda/v1298tau-ttv); see also `examples/v1298tau_ttv_student.ipynb` in this repo
 - TOI-2076: TTV modeling of a young, near-resonant planetary system [[paper]](https://ui.adsabs.harvard.edu/abs/2026arXiv260302550W/abstract)
 - TOI-791: TTV masses of two extremely low-density, Jupiter-sized planets [[paper]](https://arxiv.org/abs/2606.30016)
+- TOI-3686: Photodynamical and RV modeling of a hot Jupiter and sub-Neptune in a 2:1 mean-motion resonance [[paper]](https://arxiv.org/abs/2610.28533)
 
 ## References
 
