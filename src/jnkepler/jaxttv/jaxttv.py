@@ -254,7 +254,7 @@ class JaxTTV(Nbody):
             if len(tc) > 1:
                 pfit, t0fit = np.polyfit(m, tc, deg=1)
             else:
-                pfit, t0fit = self.p_init[j], self.tcobs_linear[j]
+                pfit, t0fit = self.p_init[j], tc[0]
                 warnings.warn(
                     "ephemeris of planet %d was not updated." % (j+1))
             t0_new.append(t0fit)
@@ -396,6 +396,9 @@ class JaxTTV(Nbody):
 
             Args:
                 par_dict: dict containing parameters
+                t_start, t_end, dt: optional integration settings; each omitted
+                    value independently defaults to the instance setting.
+                    Orbital elements are defined at the selected t_start.
 
             Returns:
                 tuple: 
@@ -404,9 +407,12 @@ class JaxTTV(Nbody):
 
         """
         # set t_start, t_end, dt, time array
-        if (t_start is None) or (t_end is None) or (dt is None):
+        if (t_start is None) and (t_end is None) and (dt is None):
             times, t_start, dt, t_end = self.times, self.t_start, self.dt, self.t_end
         else:
+            t_start = self.t_start if t_start is None else t_start
+            t_end = self.t_end if t_end is None else t_end
+            dt = self.dt if dt is None else dt
             times, t_start, dt, t_end = jnp.arange(
                 t_start, t_end, dt), t_start, dt, t_end
 

@@ -50,5 +50,31 @@ def test_overlap():
     assert lc_ol == pytest.approx(lc_nool)
 
 
+@pytest.mark.skipif(not JAXOPLANET_INSTALLED, reason="jaxoplanet is not installed")
+def test_overlap_mode_includes_a_long_nearby_non_simultaneous_transit():
+    """True is also required for close transits with unequal durations."""
+    from jnkepler.nbodytransit.transit import compute_relative_flux_loss, rsun_au
+
+    params = dict(period=jnp.array([2., 100.]), tic=jnp.array([2.3, 2.]),
+                  ecosw=jnp.array([.01, .01]), esinw=jnp.zeros(2),
+                  cosi=jnp.zeros(2), pmass=jnp.array([1e-10, 1e-10]),
+                  smass=1., srad=1., radius_ratio=jnp.array([.1, .1]), u1=0., u2=0.)
+    nt = NbodyTransit(0., 5., .02, [[2.3, 4.3], [2.]], [2., 100.], print_info=False)
+    time = jnp.array([2.17])
+    nt.set_lcobs(time, overlapping_transit=True, supersample_factor=1, print_info=False)
+    flux = nt.get_flux(params)[0]
+    tc, x, v = nt.get_xvsky_tc(params)[:3]
+    # Independently sum all registered transit events at this one epoch.
+    separation = jnp.linalg.norm(x + v*(time[0]-tc)[:, None], axis=1)/rsun_au
+    expected = jnp.sum(compute_relative_flux_loss(
+        separation, params["radius_ratio"][nt.pidx.astype(int)-1], 0., 0.))
+    np.testing.assert_allclose(flux, expected, rtol=0., atol=1e-12)
+    assert float(flux[0]) < -.006
+    # Contact windows in the same linear sky-plane approximation are disjoint.
+    speed = jnp.linalg.norm(v, axis=1)
+    half_duration = jnp.sqrt((1.1*rsun_au)**2-jnp.sum(x*x, axis=1))/speed
+    assert tc[2] + half_duration[2] < tc[0] - half_duration[0]
+
+
 if __name__ == '__main__':
     test_overlap()

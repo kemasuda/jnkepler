@@ -136,6 +136,12 @@ def elements_to_xv_scaled(t, params):
 def xv_to_elements(x, v, mass, t_ref=None):
     """Convert Cartesian state vectors to orbital elements.
 
+    Notes:
+        For exactly equatorial orbits, lnode is set to zero and omega retains
+        the in-plane orientation. These angles are not individually unique;
+        a round trip preserves positions and velocities rather than the original
+        angle values. The angular-coordinate singularities remain.
+
     Args:
         x : array_like
             Cartesian position vector(s) in AU, shape (3,) or (N, 3).

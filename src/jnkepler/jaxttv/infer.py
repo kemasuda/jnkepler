@@ -363,10 +363,9 @@ def ttv_optim_least_squares(
             - 'student_t' to use Student-t negative log likelihood
             - a custom callable compatible with scipy.optimize.least_squares
 
-            Gaussian priors are currently not supported with loss='student_t'.
-            With other non-linear losses, the Gaussian-prior residuals are
-            passed to scipy.optimize.least_squares in the same residual vector
-            as the data residuals.
+            When gaussian_priors is provided, only loss='linear' is supported.
+            Other loss strings and custom callables raise ValueError, because
+            they would also change the Gaussian-prior penalty.
         loss_kwargs: optional dict for loss-specific options. Default is None.
             For loss='student_t', use ``{'nu': ..., 'scale': ...}``.
             Default is ``{'nu': 4.0, 'scale': 1.0}``.
@@ -445,9 +444,10 @@ def ttv_optim_least_squares(
     if loss_kwargs is None:
         loss_kwargs = {}
 
-    if gaussian_priors is not None and loss == "student_t":
-        raise NotImplementedError(
-            "gaussian_priors is currently not supported with loss='student_t'."
+    if gaussian_priors is not None and loss != "linear":
+        raise ValueError(
+            "gaussian_priors requires loss='linear'; other losses would "
+            "also modify the Gaussian-prior penalty."
         )
 
     if diff_mode not in ("auto", "rev", "fwd"):

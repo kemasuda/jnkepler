@@ -38,7 +38,7 @@ jobs:
           python -m pip check
           python -c "import jax, jaxlib, numpyro; print('jax', jax.__version__, 'jaxlib', jaxlib.__version__, 'numpyro', numpyro.__version__)"
 
-      - name: Run tests
+      - name: Run regular tests
         run: python -m pytest tests -q
 
   docs:

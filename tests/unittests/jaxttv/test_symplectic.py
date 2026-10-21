@@ -70,6 +70,34 @@ def test_kepler_step_jacfwd_runs():
     assert np.all(np.isfinite(np.asarray(j)))
 
 
+@pytest.mark.parametrize("ecc", [0.5, 0.9])
+@pytest.mark.parametrize("direction", [-1., 1.])
+def test_kepler_step_at_zero_f(ecc, direction):
+    """An ellipse crosses x=0 where the old Wronskian quotient is 0/0."""
+    x = jnp.array([[1. - ecc, 0., 0.]])
+    v = jnp.array([[0., np.sqrt((1. + ecc)/(1. - ecc)), 0.]])
+    gm = jnp.ones(1)
+    for offset in (-1e-8, 0., 1e-8):
+        E = direction * np.arccos(ecc) + offset
+        dt = E - ecc * np.sin(E)  # a=GM=1, starting at periastron.
+        radius = 1. - ecc * np.cos(E)
+        expected_x = np.array([[np.cos(E)-ecc, np.sqrt(1.-ecc**2)*np.sin(E), 0.]])
+        expected_v = np.array([[-np.sin(E), np.sqrt(1.-ecc**2)*np.cos(E), 0.]])/radius
+        for step in (kepler_step, jit(kepler_step)):
+            xp, vp = step(x, v, gm, dt)
+            npt.assert_allclose(xp, expected_x, rtol=2e-12, atol=2e-14)
+            npt.assert_allclose(vp, expected_v, rtol=2e-12, atol=2e-14)
+
+    # Time derivatives must reproduce velocity and Newtonian acceleration.
+    dt = direction * (np.arccos(ecc) - ecc*np.sqrt(1.-ecc**2))
+    state = lambda t: jnp.stack(kepler_step(x, v, gm, t))
+    xp, vp = state(dt)
+    expected_derivative = jnp.stack([vp, -xp/jnp.linalg.norm(xp, axis=1)[:, None]**3])
+    for differentiate in (jacfwd, jacrev):
+        npt.assert_allclose(jit(differentiate(state))(dt), expected_derivative,
+                            rtol=2e-11, atol=2e-12)
+
+
 @pytest.mark.parametrize("h", [0., 0.06, -0.3])
 def test_forward_corrector_ttvfast_operation_order(monkeypatch, h):
     """Record primitive calls, so ordering/sign errors cannot hide numerically."""
