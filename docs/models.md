@@ -226,6 +226,15 @@ The current `NbodyTransit` interface does **not support non-transiting
 companions**. `overlapping_transit=True` allows simultaneous transits by adding
 their flux losses, but does not model planets occulting one another.
 
+Also use `overlapping_transit=True` for closely spaced transits, even when their
+actual transit intervals do not overlap. With `False`, each exposure subsample
+is assigned only to the nearest **observed transit center**. A long transit can
+extend past the midpoint to a neighboring shorter transit and lose part of its
+signal under that assignment. Use `False` only when every possible transit
+signal stays within its own center's nearest-neighbor interval, allowing for
+timing shifts, duration changes, and exposure width over the parameter range
+being explored. If this separation is uncertain, use `True`.
+
 ## Pure Keplerian orbits
 
 For independent two-body motion without planet–planet perturbations, use

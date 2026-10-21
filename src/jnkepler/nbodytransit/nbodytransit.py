@@ -31,7 +31,13 @@ class NbodyTransit(JaxTTV):
 
             Args:
                 times_lc: times in the light curve
-                overlapping_transit: if True, the code accounts for simultaneous transits; overlap between the planets is not yet supported
+                overlapping_transit: use True for simultaneous or closely spaced
+                    transits, including separate transits of different durations.
+                    False selects only the nearest observed transit center at each
+                    exposure subsample, and requires all possible transit signals
+                    to stay within their center's nearest-neighbor interval.
+                    Allow for timing/duration changes and exposure width.
+                    Overlap between the planets is not yet supported.
                 exposure_time: exposure time (same unit as times_lc)
                 supersample_factor: flux is computed at intervals given by exposure_time / supersample_factor and then summed
                 print_info: if True, show the parameters
@@ -70,7 +76,8 @@ class NbodyTransit(JaxTTV):
                   (self.supersample_num-1))
             if not self.overlapping_transit:
                 warnings.warn(
-                    "set overlapping_transit to True if overlapping transits are present in the data.")
+                    "set overlapping_transit to True for simultaneous or closely spaced transits, "
+                    "including separate transits of different durations.")
 
     def get_xvsky_tc(self, par_dict):
         """compute sky-plane positions and velocities at transit centers
@@ -218,8 +225,16 @@ def initialize_transit_params(par_dict_):
             "radius_ratio needs to be provided for planet-to-star radius ratios.")
 
     if "b" in keys:
-        par_dict["cosi"] = b_to_cosi(par_dict_["b"], par_dict_["period"], par_dict_[
-                                     "ecosw"], par_dict_["esinw"], par_dict_["srad"], par_dict_["smass"])
+        if "ecosw" in keys and "esinw" in keys:
+            ecosw, esinw = par_dict_["ecosw"], par_dict_["esinw"]
+        elif "ecc" in keys and "omega" in keys:
+            ecosw = par_dict_["ecc"] * jnp.cos(par_dict_["omega"])
+            esinw = par_dict_["ecc"] * jnp.sin(par_dict_["omega"])
+        else:
+            raise ValueError("Either (ecosw, esinw) or (ecc, omega) needs to be provided.")
+        par_dict["cosi"] = b_to_cosi(
+            par_dict_["b"], par_dict_["period"], ecosw, esinw,
+            par_dict["srad"], par_dict["smass"])
     elif "cosi" in keys:
         pass
     else:

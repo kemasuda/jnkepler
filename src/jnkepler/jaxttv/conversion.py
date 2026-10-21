@@ -120,6 +120,11 @@ def elements_to_xv(porb, ecc, inc, omega, lnode, u, mass):
 def xv_to_elements(x, v, ki):
     """convert position/velocity to elements
 
+        Note:
+            For exactly equatorial orbits, the ascending node is set to zero
+            and omega retains the in-plane orientation. The individual angles
+            are not unique there; compare reconstructed positions/velocities.
+
         Args:
             x, v: position and velocity (Norbit, xyz)
             ki: 'GM' in Kepler's 3rd law (Norbit); depends on what x/v mean (Jacobi, astrocentric, ...)
@@ -154,11 +159,18 @@ def xv_to_elements(x, v, ki):
         (jnp.sqrt(a / ki) * jnp.sin(E))[:, None] * v
     Q = (jnp.sin(E) / r0 / jnp.sqrt(1 - e*e))[:, None] * x + (
         jnp.sqrt(a / ki) * (jnp.cos(E)-e) / jnp.sqrt(1 - e*e))[:, None] * v
-    PQz = jnp.sqrt(P[:, 2]**2 + Q[:, 2]**2)
-    omega = jnp.where(PQz != 0., jnp.arctan2(P[:, 2], Q[:, 2]), 0.)
+    PQz2 = P[:, 2]**2 + Q[:, 2]**2
+    inclined = PQz2 != 0.
+    # Select atan2 inputs before evaluation, avoiding atan2(0, 0) in the
+    # unused branch. With node=0, retrograde equatorial motion reverses omega.
+    omega_y = jnp.where(inclined, P[:, 2], jnp.where(hz >= 0., P[:, 1], -P[:, 1]))
+    omega_x = jnp.where(inclined, Q[:, 2], P[:, 0])
+    omega = jnp.arctan2(omega_y, omega_x)
+    PQz = jnp.sqrt(jnp.where(inclined, PQz2, 1.))
     coslnode = (P[:, 0] * Q[:, 2] - P[:, 2] * Q[:, 0]) / PQz
     sinlnode = (P[:, 1] * Q[:, 2] - P[:, 2] * Q[:, 1]) / PQz
-    lnode = jnp.where(PQz != 0., jnp.arctan2(sinlnode, coslnode), 0.)
+    lnode = jnp.arctan2(jnp.where(inclined, sinlnode, 0.),
+                       jnp.where(inclined, coslnode, 1.))
 
     return jnp.array([a, 2*jnp.pi/n, e, inc, omega, lnode, E - esinE0])
 

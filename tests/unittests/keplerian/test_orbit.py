@@ -1,5 +1,31 @@
 import numpy as np
+import pytest
 from jnkepler.keplerian import elements_to_xv, elements_to_xv_scaled, xv_to_elements
+
+
+@pytest.mark.parametrize("inc", [0., np.pi])
+@pytest.mark.parametrize("ecc", [0., 0.2, 0.8])
+def test_equatorial_orbits_preserve_orientation(inc, ecc):
+    params = dict(period=100., ecc=ecc, inc=inc, omega=0.5,
+                  lnode=1., tau=10., mass=1.)
+    initial = elements_to_xv(0., params)
+    # Exact equatorial input, including retrograde motion (sin(pi) is not
+    # exactly zero in floating point).
+    x, v = np.array(initial["x"][0]), np.array(initial["v"][0])
+    x[2], v[2] = 0., 0.
+    recovered = xv_to_elements(x, v, params["mass"], t_ref=0.)
+    assert recovered["lnode"] == 0.
+    if ecc > 0.:
+        expected_omega = params["omega"] + (1. if inc == 0. else -1.)*params["lnode"]
+        np.testing.assert_allclose(np.exp(1j*recovered["omega"]),
+                                   np.exp(1j*expected_omega), atol=1e-14)
+    # Check the physical trajectory, since the individual angles (and tau
+    # for circular motion) need not match the original parameterization.
+    times = np.array([0., 5., 20.])
+    expected = elements_to_xv(times, params)
+    actual = elements_to_xv(times, recovered)
+    for key in ("x", "v"):
+        np.testing.assert_allclose(actual[key], expected[key], rtol=2e-12, atol=5e-15)
 
 
 def test_elements_xv_reversible():

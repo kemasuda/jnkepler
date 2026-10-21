@@ -69,6 +69,23 @@ In `JaxTTV.get_transit_times_obs`, the default transit-time solver is now `"fast
 
 For this reason, when using the `fast` method in NUTS, **initialize the sampler from a good solution**, such as a least-squares optimum as in the example notebooks, rather than from a diffuse or poor initial guess. If multimodality is a major concern, consider a preliminary grid/global search before running NUTS, rather than relying on NUTS alone to discover all modes.
 
+## Tests
+
+Install the test dependencies with `python -m pip install -e ".[test]"` and
+set `XLA_FLAGS` for your JAX version as described above.
+
+```bash
+python -m pytest tests -q             # regular tests (default)
+python -m pytest tests -q -m slow     # slow tests only
+python -m pytest tests -q -m ""       # all tests
+```
+
+The long integration gradient and Jacobian comparisons in
+`test_selective_checkpoint.py` are marked `slow` and excluded by default.
+The forward-integration and checkpoint-structure checks remain in the regular
+suite. CI runs only the regular suite for each supported JAX environment;
+run the slow tests explicitly when needed.
+
 ## Examples
 
 Start with the step-by-step tutorials: [fit transit times](docs/quickstart.md), [write a NumPyro model](docs/numpyro_model.md), and [initialize, tune, and diagnose NUTS](docs/nuts.md).
