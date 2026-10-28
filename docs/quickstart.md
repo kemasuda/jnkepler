@@ -3,7 +3,7 @@
 **Try the Kepler-51 example.** The accompanying
 [Kepler-51 notebook](https://github.com/kemasuda/jnkepler/blob/main/examples/kep51_ttv_normal.ipynb)
 reports a full runtime of about **6 minutes**, including optimization and NUTS
-posterior sampling, on an Apple M4 Max with jnkepler 0.2.8 and JAX 0.11.2.
+posterior sampling, on an Apple M4 Max with jnkepler 0.2.10 and JAX 0.12.0.1.
 
 This three-part tutorial walks through that workflow: load the timings, optimize
 an orbital model, [write a NumPyro model](numpyro_model.md), and [run
@@ -19,8 +19,9 @@ scientific context.
 
 ## Set up the session
 
-Set `XLA_FLAGS` **before importing any library that imports JAX**, and configure
-CPU devices before the first JAX computation. In an already-used notebook,
+With both JAX and jaxlib >=0.12, no CPU performance workaround is needed.
+For older versions, set `XLA_FLAGS` **before importing any library that imports JAX**.
+Configure CPU devices before the first JAX computation. In an already-used notebook,
 restart the kernel first. The version-specific performance settings below
 follow the [README](https://github.com/kemasuda/jnkepler#installation), preserving
 any existing performance options in `XLA_FLAGS`.
@@ -31,7 +32,8 @@ from importlib.metadata import version
 from packaging.version import Version
 
 jax_release = Version(version("jax")).release
-if "XLA_FLAGS" not in os.environ:
+jaxlib_release = Version(version("jaxlib")).release
+if "XLA_FLAGS" not in os.environ and min(jax_release, jaxlib_release) < (0, 12):
     if jax_release >= (0, 7, 0):
         os.environ["XLA_FLAGS"] = (
             "--xla_backend_extra_options="

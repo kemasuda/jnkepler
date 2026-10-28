@@ -22,8 +22,8 @@ the V1298 Tau notebook imports `dill` in its resampling section.
 | [Kepler-51: photodynamics with a Gaussian process](https://github.com/kemasuda/jnkepler/blob/main/examples/kep51_photodynamics_gp.ipynb) | Light-curve modeling, staged optimization, and GP noise | Based on the photodynamical analysis in the appendix of [Masuda et al. (2024)](https://ui.adsabs.harvard.edu/abs/2024AJ....168..294M/abstract); requires `jaxoplanet` and `tinygp` and also omits the later fourth planet |
 
 The notebook introductions report approximate full-run times on an Apple M4 Max
-with jnkepler 0.2.8 and JAX 0.11.2: 6 minutes for Gaussian Kepler-51 TTVs,
-9 hours for V1298 Tau, 4.5 hours for TRAPPIST-1, and 1.5 hours for Kepler-51
+with jnkepler 0.2.10 and JAX 0.12.0.1: 6 minutes for Gaussian Kepler-51 TTVs,
+5.5 hours for V1298 Tau, 2.5 hours for TRAPPIST-1, and 1.5 hours for Kepler-51
 photodynamics. These are reported example timings, not guarantees for your
 hardware or evidence that a shorter run has converged.
 
