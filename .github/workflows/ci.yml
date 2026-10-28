@@ -18,6 +18,9 @@ jobs:
           - python-version: "3.12"
             constraints: cpu-modern.txt
             xla-flags: --xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=65536
+          - python-version: "3.12"
+            constraints: cpu-jax012.txt
+            xla-flags: ""
 
     env:
       JAX_PLATFORMS: cpu
@@ -38,7 +41,7 @@ jobs:
           python -m pip check
           python -c "import jax, jaxlib, numpyro; print('jax', jax.__version__, 'jaxlib', jaxlib.__version__, 'numpyro', numpyro.__version__)"
 
-      - name: Run tests
+      - name: Run regular tests
         run: python -m pytest tests -q
 
   docs:

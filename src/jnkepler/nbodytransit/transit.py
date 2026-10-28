@@ -83,7 +83,10 @@ def compute_nbody_flux_nooverlap(rstar, prad, u1, u2, tc, xsky_tc, vsky_tc, time
     """ compute light curve given N-body model
 
         Note:
-            This function assumes that the data do not include simultaneous transits of two planets.
+            The assigned transit center must remain the nearest observed center
+            throughout its possible signal, including exposure subsamples.
+            Merely excluding simultaneous transits is insufficient when durations
+            differ. Use compute_nbody_flux for closely spaced transits as well.
 
         Args:
             rstar: stellar radius (solar unit)

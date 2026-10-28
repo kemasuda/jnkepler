@@ -190,7 +190,9 @@ def kepler_step(x, v, gm, dt, nitr=10):
     g = (2.0 * sx2 * (esinE0 * sx2 + cx2 * r0 / a)) / n
     fp = 1.0 - cx * ecosE0 + sx * esinE0
     fdot = -(a / (r0 * fp)) * n * sx
-    gdot = (1.0 + g * fdot) / f
+    # fp = r_new / a. The Wronskian form (1 + g*fdot)/f has a
+    # removable singularity at f=0 and amplifies roundoff nearby.
+    gdot = 1.0 - (2.0 * sx2 * sx2) / fp
 
     x_new = f[:, None] * x + g[:, None] * v
     v_new = fdot[:, None] * x + gdot[:, None] * v

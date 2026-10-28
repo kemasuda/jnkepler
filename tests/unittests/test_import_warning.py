@@ -4,6 +4,7 @@ import warnings
 
 import jax
 import jax.numpy as jnp
+import jaxlib.version
 import pytest
 import jnkepler
 from jnkepler._cpu_performance import _cpu_performance_message
@@ -52,11 +53,15 @@ MODERN = f"--xla_backend_extra_options={THRESHOLD}=65536"
     ((0, 11, 2), '"unterminated', MODERN),
     ((0, 11, 2), 123, MODERN),
     ((0, 11, 2), [MODERN], MODERN),
-    ((1, 0, 0), "", MODERN),
+    ((0, 12, 0), "", None),
+    ((0, 12, 0, 1), None, None),
+    ((0, 12, 0, 1), MODERN, None),
+    ((0, 12, 0, 1), LEGACY, None),
+    ((1, 0, 0), "", None),
 ])
 def test_cpu_advice(version_info, flags, setting):
     before = dict(os.environ)
-    message = _cpu_performance_message(version_info, flags)
+    message = _cpu_performance_message(version_info, flags, version_info)
     assert dict(os.environ) == before
     if setting is None:
         assert message is None
@@ -76,24 +81,30 @@ def test_cpu_advice(version_info, flags, setting):
 
 @pytest.mark.parametrize("version_info", [None, (), (0,), "garbage", ("0", "11"), (-1, 7)])
 def test_unknown_version_does_not_break_advice(version_info):
-    assert _cpu_performance_message(version_info, MODERN) is None
+    assert _cpu_performance_message(version_info, "", (0, 12, 0)) is None
+    assert _cpu_performance_message((0, 12, 0), "", version_info) is None
 
 
-@pytest.mark.parametrize("version, version_info, flags, expect_warning", [
-    ("0.6.2", (0, 6, 2), None, True),
-    ("0.6.2", (0, 6, 2), LEGACY, False),
-    ("0.7.0", (0, 7, 0), None, True),
-    ("0.7.0", (0, 7, 0), MODERN, False),
-    ("0.7.0.dev20261006", (0, 7, 0), MODERN, False),
-    ("0.11.2+cpu", (0, 11, 2), MODERN, False),
-    ("0.11.2", (0, 11, 2), LEGACY, True),
-    ("0.11.2", (0, 11, 2), '"unterminated', True),
+@pytest.mark.parametrize("version, version_info, jaxlib_version_info, flags, expect_warning", [
+    ("0.6.2", (0, 6, 2), (0, 6, 2), None, True),
+    ("0.6.2", (0, 6, 2), (0, 6, 2), LEGACY, False),
+    ("0.7.0", (0, 7, 0), (0, 7, 0), None, True),
+    ("0.7.0", (0, 7, 0), (0, 7, 0), MODERN, False),
+    ("0.7.0.dev20261006", (0, 7, 0), (0, 7, 0), MODERN, False),
+    ("0.11.2+cpu", (0, 11, 2), (0, 11, 2), MODERN, False),
+    ("0.11.2", (0, 11, 2), (0, 11, 2), LEGACY, True),
+    ("0.11.2", (0, 11, 2), (0, 11, 2), '"unterminated', True),
+    ("0.12.0", (0, 12, 0), (0, 12, 0), None, False),
+    ("0.12.0.1", (0, 12, 0, 1), (0, 12, 0, 1), None, False),
+    ("0.12.0.1", (0, 12, 0, 1), (0, 11, 2), None, True),
+    ("0.12.0.1", (0, 12, 0, 1), (0, 11, 2), MODERN, False),
 ])
 def test_import_advice_has_no_setting_or_backend_side_effects(
-    monkeypatch, version, version_info, flags, expect_warning,
+    monkeypatch, version, version_info, jaxlib_version_info, flags, expect_warning,
 ):
     monkeypatch.setattr(jax, "__version__", version)
     monkeypatch.setattr(jax, "__version_info__", version_info)
+    monkeypatch.setattr(jaxlib.version, "__version_info__", jaxlib_version_info)
     if flags is None:
         monkeypatch.delenv("XLA_FLAGS", raising=False)
     else:
@@ -116,4 +127,6 @@ def test_import_advice_has_no_setting_or_backend_side_effects(
     assert len(caught) == int(expect_warning)
     if expect_warning:
         assert caught[0].category is UserWarning
-        assert str(caught[0].message) == _cpu_performance_message(version_info, flags)
+        assert str(caught[0].message) == _cpu_performance_message(
+            version_info, flags, jaxlib_version_info,
+        )

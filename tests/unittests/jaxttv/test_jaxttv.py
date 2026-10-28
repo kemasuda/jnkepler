@@ -6,11 +6,41 @@ import pytest
 from importlib.util import find_spec
 import pickle
 from jnkepler.tests import read_testdata_tc, read_testdata_4planet
+from jnkepler.jaxttv import JaxTTV
 from jnkepler.jaxttv.ttvfastutils import params_for_ttvfast, get_ttvfast_model_rv, get_ttvfast_model
 from jnkepler.jaxttv.rv import rv_from_xvjac
 from jnkepler.jaxttv.utils import em_to_dict, params_to_elements, elements_to_pdic, find_nearest_idx
 
 path = importlib_resources.files('jnkepler').joinpath('data')
+
+
+def test_linear_ephemeris_with_single_observation_after_multiple():
+    model = JaxTTV(0., 40., .5, [[2., 12., 22.], [7.], [3., 23.]],
+                   [10., 20., 20.], print_info=False)
+    with pytest.warns(UserWarning, match="planet 2"):
+        epochs, periods = model.linear_ephemeris()
+    np.testing.assert_allclose(epochs, [2., 7., 3.], atol=1e-12)
+    np.testing.assert_allclose(periods, [10., 20., 20.], atol=1e-12)
+
+
+@pytest.mark.parametrize("override", [{"t_start": 5.}, {"t_end": 15.}, {"dt": 1.}])
+def test_all_transits_respects_individual_integration_settings(override):
+    model = JaxTTV(0., 25., .5, [[2., 12., 22.], [3., 19.]],
+                   [10., 16.], print_info=False)
+    params = {key: jnp.array(value) for key, value in {
+        "period": [10., 16.], "tic": [2., 3.],
+        "ecosw": [.1, -.08], "esinw": [.06, .04],
+        "pmass": [3e-5, 5e-5],
+    }.items()}
+    settings = dict(t_start=0., t_end=25., dt=.5)
+    settings.update(override)
+    actual = model.get_transit_times_all(params, **override)
+    expected = model.get_transit_times_all(params, **settings)
+    for got, wanted in zip(actual, expected):
+        np.testing.assert_allclose(got, wanted, rtol=0., atol=1e-12)
+    assert np.all(np.asarray(actual[0]) > settings["t_start"])
+    assert np.all(np.asarray(actual[0]) < settings["t_end"])
+    assert (model.t_start, model.t_end, model.dt) == (0., 25., .5)
 
 
 def test_jaxttv():
