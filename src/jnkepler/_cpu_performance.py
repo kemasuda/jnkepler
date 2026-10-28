@@ -35,16 +35,22 @@ def _explicit_cpu_threshold(flags):
         return False
 
 
-def _cpu_performance_message(version_info, xla_flags):
-    """Return advice, or None for an explicit setting / unknown JAX version.
+def _cpu_performance_message(version_info, xla_flags, jaxlib_version_info):
+    """Return advice, or None when unnecessary or versions are unknown.
 
     Recognizing an environment setting does not verify backend application.
     """
     try:
         major, minor = version_info[:2]
+        lib_major, lib_minor = jaxlib_version_info[:2]
     except (TypeError, ValueError):
         return None
-    if any(type(part) is not int or part < 0 for part in (major, minor)):
+    if any(
+        type(part) is not int or part < 0
+        for part in (major, minor, lib_major, lib_minor)
+    ):
+        return None
+    if (major, minor) >= (0, 12) and (lib_major, lib_minor) >= (0, 12):
         return None
 
     flags = _flag_values(xla_flags)
@@ -60,7 +66,7 @@ def _cpu_performance_message(version_info, xla_flags):
             "--xla_backend_extra_options="
             "xla_cpu_small_while_loop_byte_threshold=65536"
         )
-        series = "JAX >= 0.7"
+        series = "JAX >= 0.7 with jaxlib < 0.12"
     return (
         f"For CPU performance with {series}, set XLA_FLAGS\n"
         "before importing JAX or jnkepler.\n"

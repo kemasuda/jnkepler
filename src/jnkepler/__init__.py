@@ -17,11 +17,13 @@ from . import keplerian
 import os
 import warnings
 import jax
+import jaxlib.version
 
 from ._cpu_performance import _cpu_performance_message
 
 _cpu_advice = _cpu_performance_message(
     getattr(jax, "__version_info__", None), os.environ.get("XLA_FLAGS", ""),
+    getattr(jaxlib.version, "__version_info__", None),
 )
 if _cpu_advice:
     warnings.warn(_cpu_advice, UserWarning)

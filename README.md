@@ -6,8 +6,8 @@
 
 ## Subpackages
 
-- **jnkepler.jaxttv**: A differentialble N-body model for analyzing transit timing variations (TTVs) and radial velocities (RVs) of multi-planet systems.
-- **jnkepler.nbodytransit**: A differentialble photodynamical model. [`jaxoplanet`](https://jax.exoplanet.codes/en/latest/) needs to be installed for using this package.
+- **jnkepler.jaxttv**: A differentiable N-body model for analyzing transit timing variations (TTVs) and radial velocities (RVs) of multi-planet systems.
+- **jnkepler.nbodytransit**: A differentiable photodynamical model. [`jaxoplanet`](https://jax.exoplanet.codes/en/latest/) needs to be installed for using this package.
 - **jnkepler.nbodyrv**: A differentiable RV model taking into account mutual interactions between planets.
 
 See [readthedocs](https://jnkepler.readthedocs.io/en/stable/) for more details.
@@ -18,11 +18,11 @@ See [readthedocs](https://jnkepler.readthedocs.io/en/stable/) for more details.
 
 ### *CPU performance note*
 
-`jnkepler` is primarily intended for CPU execution, and supports recent JAX releases (tested through 0.11.2). For JAX >=0.4.32, the version-specific settings below substantially improve `jnkepler`'s performance compared with the default runtime settings.
+`jnkepler` is primarily intended for CPU execution and supports recent JAX/jaxlib releases (tested through 0.12.0.1). With **both JAX and jaxlib >=0.12**, the default settings provide good CPU performance.
 
-Set `XLA_FLAGS` **before importing JAX, jnkepler, NumPyro, or any other library that imports JAX**. In notebooks, restart the kernel first if these libraries have already been imported.
+For older versions, use the matching `XLA_FLAGS` setting below to avoid an XLA CPU performance regression. Apply it **before importing JAX, jnkepler, NumPyro, or any other library that imports JAX**. In notebooks, restart the kernel first if these libraries have already been imported.
 
-**JAX >=0.7: increase the small-while-loop threshold**
+**JAX/jaxlib 0.7–0.11: increase the small-while-loop threshold**
 
 ```bash
 export XLA_FLAGS="--xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=65536"
@@ -41,7 +41,7 @@ import jax
 import jnkepler
 ```
 
-**JAX 0.4.32–0.6.x: use the legacy CPU runtime**
+**JAX/jaxlib 0.4.32–0.6.x: use the legacy CPU runtime**
 
 ```bash
 export XLA_FLAGS="--xla_cpu_use_thunk_runtime=false"
@@ -57,11 +57,9 @@ import jax
 import jnkepler
 ```
 
-Use only the configuration for your JAX version. When upgrading to JAX >=0.7, replace `--xla_cpu_use_thunk_runtime=false` with the threshold setting above.
+When upgrading from 0.6.x to 0.7–0.11, replace the legacy runtime flag with the threshold setting above. Once both JAX and jaxlib are >=0.12, remove these workaround settings.
 
-Performance varies with the JAX version, planetary system, CPU, and workload. **JAX/jaxlib 0.6.2 with the legacy runtime** provides a well-tested and stable CPU performance reference. If execution is unexpectedly slow after applying the settings above, comparing against this configuration can help identify performance regressions. It can be faster for some workloads, but is not required or universally faster.
-
-See also [issue #30](https://github.com/kemasuda/jnkepler/issues/30) for benchmarks, version comparisons, and technical details.
+See also [issue #30](https://github.com/kemasuda/jnkepler/issues/30) for jnkepler benchmarks and version comparisons, and [OpenXLA issue #50040](https://github.com/openxla/xla/issues/50040) for the upstream XLA CPU performance issue and fix.
 
 ### *Note on the transit-finding algorithm (since v0.2.5)*
 
